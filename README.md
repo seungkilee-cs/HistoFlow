@@ -1,2 +1,2 @@
-# Oncoscan
-Cancer detecting model with Kotlin and Java
+# HistoFlow
+Cancer detecting pathology AI with Kotlin and Java.
