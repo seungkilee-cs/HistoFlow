@@ -7,13 +7,13 @@ Here are the Phase 0 design and planning for the POC app.
 
 ### DB
 
-#### Primary Database: PostgreSQL + PostGIS
+#### Primary Database: [PostgreSQL]() + [PostGIS]()
 A reliable, open-source relational database with an extension for spatial data support. PostGIS indexes spatial attributes like cell coordinates, enabling the fast viewport-bound queries necessary for interactive zoom and pan. It is ideal for managing structured metadata like patient info, slide annotations, and running spatial queries on millions of cells efficiently.
 
-#### Object Storage: Amazon S3 (or self-hosted alternatives)
+#### Object Storage: [Amazon S3]() (or self-hosted alternatives)
 Scalable and cost-efficient cloud object storage is used for the gigabyte-scale whole slide images, which are stored separately from the metadata database. The database stores references (file paths or URIs) to the image location in object storage to keep the database itself lean and fast.
 
-#### Optional NoSQL Document Store: MongoDB
+#### Optional NoSQL Document Store: [MongoDB]()
 This can be used to support flexible and evolving storage of complex annotation details or AI model outputs that do not easily conform to a fixed relational schema. For anything that handles this nature of data, there's likely no "one-size-fits-all" db solution.
 
 ### Backend
@@ -54,11 +54,15 @@ This architecture is modular, allowing for independent scaling of the metadata s
 
 ## Development & Deployment
 
-- Monorepo: A monorepo approach (using tools like Nx or Turborepo) enables shared UI components, types, and coordinated releases across the frontend and backend applications.
+- Monorepo: A monorepo approach (using tools like [Nx]() or [Turborepo]()) enables shared UI components, types, and coordinated releases across the frontend and backend applications.
 - CI/CD: CI/CD pipelines managed by a tool like GitHub Actions will automate builds, run tests, and handle deployments to staging and production environments.
-- Monitoring: Logging and monitoring will be implemented using a stack like Prometheus and Grafana to ensure system health and track performance under heavy workloads.
+- Monitoring: Logging and monitoring will be implemented using a stack like [Prometheus]() and [Grafana]() to ensure system health and track performance under heavy workloads.
 - Process: We follow agile engineering practices with a focus on continuous improvement, comprehensive testing, and clear documentation.
 
 ## Wireframes
 
+[Wireframes]()
+
 ## Design
+
+[Design 00]()
