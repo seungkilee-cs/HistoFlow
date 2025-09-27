@@ -33,17 +33,17 @@ sdk default java 17.0.12-tem
 java -version
 ```
 
-#### Intellij Community Edition Setup
+#### 2. Intellij Community Edition Setup
 
 Download Intellij Community Edition from JetBrains. Since the community edition does not allow for starting a new Spring Boot project, we'll have to use [https://start.spring.io/](https://start.spring.io/) to initialize the project and open it in the Intellij.
 
-#### Kotlin + Spring Boot Project Setup
+#### 3. Kotlin + Spring Boot Project Setup
 
 ![screenshot](./assets/25-09-27-Spring-Initializr.png)
 
-Then, you can open the backend directory in Intellij Community.
+Then, you can open the backend directory in Intellij Community. Get in your Intellij, and open the `backend` directory.
 
-#### Install Kotlin Compiler for Commandline use
+#### 4. (Optional) Install Kotlin Compiler for Commandline use
 
 ```bash
 # sdk install
