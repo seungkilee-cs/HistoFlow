@@ -39,7 +39,7 @@ Download Intellij Community Edition from JetBrains. Since the community edition 
 
 #### Kotlin + Spring Boot Project Setup
 
-[screenshot](./assets/Screenshot 2025-09-27 at 22-15-43 Spring Initializr.png)
+![screenshot](./assets/25-09-27-Spring-Initializr.png)
 
 Then, you can open the backend directory in Intellij Community.
 
