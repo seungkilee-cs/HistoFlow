@@ -6,7 +6,7 @@ Cancer detection AI platform, inspired by [Lunit](https://www.lunit.io/).
 
 ### Backend
 
-- Manual Setup Guide [Here](./docs/setup/backend/manual.md)
+- Manual Setup Guide [Here](./docs/setup/backend/manual.kot.md)
 - Docker Setup Guide [In Progress]()
 
 ## Design
