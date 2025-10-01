@@ -7,15 +7,7 @@
   justify-content: flex-start;
 }
 
-.HomePage-title {
-  color: #fff;
-  font-size: 4rem;
-  font-weight: bold;
-  margin-top: 2rem;
-  letter-spacing: 2px;
-}
-
-.image-upload-area {
+.upload-container {
   border: 2px dashed #fff;
   border-radius: 8px;
   padding: 2rem;
@@ -25,7 +17,7 @@
   color: #fff;
 }
 
-.image-upload-btn {
+.upload-button {
   margin-top: 1rem;
   padding: 0.5rem 1.5rem;
   background: #fca311;
@@ -36,11 +28,11 @@
   cursor: pointer;
 }
 
-.image-preview {
+.preview-container {
   margin-top: 2rem;
 }
 
-.image-preview-img {
+.preview-image {
   max-width: 100%;
   max-height: 300px;
   border-radius: 8px;

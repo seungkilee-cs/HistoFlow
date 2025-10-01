@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import '../styles/HomePage.scss';
 
 function HomePage() {
   const [image, setImage] = useState<File | null>(null);
+  // Likely won't be needed as real images are to big. Just here for testing
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -35,7 +36,7 @@ function HomePage() {
     <div className="HomePage">
       <h1>HistoFlow</h1>
       <div
-        className="image-upload-area"
+        className="upload-container"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
@@ -43,7 +44,7 @@ function HomePage() {
         <button
           type="button"
           onClick={handleButtonClick}
-          className="image-upload-btn"
+          className="upload-button"
         >
           Select Image
         </button>
@@ -55,11 +56,11 @@ function HomePage() {
           onChange={handleFileChange}
         />
         {preview && (
-          <div className="image-preview">
+          <div className="preview-container">
             <img
               src={preview}
               alt="Preview"
-              className="image-preview-img"
+              className="preview-image"
             />
           </div>
         )}
