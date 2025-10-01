@@ -1,0 +1,47 @@
+.HomePage {
+  min-height: 100vh;
+  background: #14213d;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.HomePage-title {
+  color: #fff;
+  font-size: 4rem;
+  font-weight: bold;
+  margin-top: 2rem;
+  letter-spacing: 2px;
+}
+
+.image-upload-area {
+  border: 2px dashed #fff;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  margin-top: 2rem;
+  background: rgba(20, 33, 61, 0.7);
+  color: #fff;
+}
+
+.image-upload-btn {
+  margin-top: 1rem;
+  padding: 0.5rem 1.5rem;
+  background: #fca311;
+  color: #14213d;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.image-preview {
+  margin-top: 2rem;
+}
+
+.image-preview-img {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 8px;
+}
