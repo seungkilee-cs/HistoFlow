@@ -1,6 +1,6 @@
 // Import all your SCSS partials and global styles here
-@import './base.scss';
+@use "./base.scss";
 
-@import './App.scss';
+@use "./App.scss";
 
-@import './HomePage.scss';
+@use "./HomePage.scss";
