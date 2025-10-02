@@ -1,0 +1,14 @@
+services:
+  api:
+    volumes:
+      - ./apps/api:/app
+    command: ["./gradlew", "bootRun", "--no-daemon"]
+  tile-server:
+    volumes:
+      - ./apps/tile-server:/app
+    command:
+      ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+  web:
+    volumes:
+      - ./apps/frontend:/app
+    command: ["npm", "run", "dev", "--", "--host"]
