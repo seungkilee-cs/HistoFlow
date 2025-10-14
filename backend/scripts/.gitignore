@@ -1,0 +1,17 @@
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Temporary tile output
+tiles_output/
+
+# Test images (don't commit large files)
+*.tiff
+*.tif
+*.jpg
+*.jpeg
+*.png
+
+# Keep example small images if needed
+!test-small.jpg
