@@ -10,7 +10,7 @@ tiles_output/
 *.tiff
 *.tif
 *.jpg
-*.jpeg
+# *.jpeg
 *.png
 
 # Keep example small images if needed
