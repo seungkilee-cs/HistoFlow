@@ -47,7 +47,7 @@ class TileController(private val tileService: TileService) {
      * Frontend request: GET /api/v1/tiles/test-image-001/5/12_8.jpg
      * MinIO object: test-image-001/image_files/5/12_8.jpg
      */
-    @GetMapping("/{imageId}/{level}/{coord}.jpg")
+    @GetMapping("/{imageId}/image_files/{level}/{coord}.jpg")
     fun getTile(
         @PathVariable imageId: String,
         @PathVariable level: Int,

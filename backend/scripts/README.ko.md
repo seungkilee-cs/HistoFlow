@@ -5,6 +5,8 @@ Python 환경 및 타일 생성 스크립트 (Backend 전용)
 범위: 이 디렉토리는 타일 생성용 Python 환경만 관리  
 전체 개발 환경: `/scripts/dev-start.sh` 사용
 
+> 그냥 `backend/scripts/setup.sh`를 쓰면 쉽게 설치 가능함
+
 ## 이게 뭐임?
 
 의료 이미지를 웹에서 보려면 타일로 쪼개야함 (OpenSeadragon 쓰려고)

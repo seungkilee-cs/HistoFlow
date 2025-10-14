@@ -45,15 +45,17 @@ def generate_tiles(input_image, output_dir, image_id):
     
     # DZI 피라미드 생성
     # image.dzi (XML 메타데이터) + image_files/ (실제 타일들) 구조로 만들어짐
+    base_path = tiles_path / "image"
+
     image.dzsave(
-        str(tiles_path / "image"),
-        suffix=".jpg",
-        overlap=0,               # 타일 겹침 없음
-        tile_size=256,           # 256x256 고정
-        depth="onetile",
+        str(base_path),
+        suffix=".jpg[Q=85]",
+        overlap=0,
+        tile_size=256,
+        depth="onepixel",
         layout="dz",
         properties=False,
-        compression=85           # JPEG 퀄리티, 85면 적당한듯
+        skip_blanks=False
     )
     
     print(f"Tiles generated successfully")

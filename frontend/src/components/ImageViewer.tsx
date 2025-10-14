@@ -105,10 +105,13 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
       ref={viewerRef}
       style={{
         width: '100%',
-        height: '600px',
-        border: '2px solid #ccc',
-        borderRadius: '8px',
-        backgroundColor: '#000',
+        height: '70vh',
+        minHeight: '520px',
+        borderRadius: '16px',
+        border: '1px solid rgba(15, 23, 42, 0.1)',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #111827 100%)',
+        boxShadow: '0 20px 45px -25px rgba(15, 23, 42, 0.65)',
+        overflow: 'hidden',
         position: 'relative'
       }}
     />

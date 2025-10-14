@@ -14,45 +14,68 @@ else
     echo "vips already installed: $(vips --version | head -1)"
 fi
 
-# 2. requirements를 불러올 pyenv 설치 확인
-if ! command -v pyenv &> /dev/null; then
-    echo "pyenv not found. Installing..."
-    brew install pyenv
-    
-    echo ""
-    echo "Add these lines to your shell profile (~/.zshrc or ~/.bash_profile):"
-    echo '  export PYENV_ROOT="$HOME/.pyenv"'
-    echo '  export PATH="$PYENV_ROOT/bin:$PATH"'
-    echo '  eval "$(pyenv init -)"'
-    echo ""
-    echo "Then restart your shell and run this script again."
-    exit 1
-fi
+# 2. Python 선택 (SSL 지원 필수)
+find_python_with_ssl() {
+    for candidate in "$@"; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            local resolved
+            resolved="$(command -v "$candidate")"
+            if "$resolved" -c "import ssl" >/dev/null 2>&1; then
+                PYTHON_BIN="$resolved"
+                return 0
+            else
+                echo "Found $resolved but SSL module missing"
+            fi
+        fi
+    done
+    return 1
+}
 
-# 3. Python 3.11.9 설치
-PYTHON_VERSION="3.11.9"
-if ! pyenv versions | grep -q "$PYTHON_VERSION"; then
-    echo "Installing Python $PYTHON_VERSION..."
-    pyenv install $PYTHON_VERSION
+echo "Searching for Python interpreter with SSL support..."
+PYTHON_BIN=""
+
+if find_python_with_ssl python3 python python3.12; then
+    echo "Using existing Python: $PYTHON_BIN"
 else
-    echo "Python $PYTHON_VERSION already installed"
-fi
+    echo "No suitable Python found. Installing Homebrew python@3.12..."
+    PYTHON_FORMULA="python@3.12"
+    if ! brew ls --versions $PYTHON_FORMULA > /dev/null; then
+        brew install $PYTHON_FORMULA
+    else
+        echo "$PYTHON_FORMULA already installed"
+    fi
 
-# 4. 로컬 Python 버전 설정 (backend/scripts 디렉토리 내의 파이썬 버전임)
-pyenv local $PYTHON_VERSION
-echo "Set local Python version to $PYTHON_VERSION"
+    PYTHON_PREFIX="$(brew --prefix $PYTHON_FORMULA)"
+    if [ -x "$PYTHON_PREFIX/libexec/bin/python3.12" ]; then
+        PYTHON_BIN="$PYTHON_PREFIX/libexec/bin/python3.12"
+    elif [ -x "$PYTHON_PREFIX/bin/python3.12" ]; then
+        PYTHON_BIN="$PYTHON_PREFIX/bin/python3.12"
+    elif [ -x "$PYTHON_PREFIX/bin/python3" ]; then
+        PYTHON_BIN="$PYTHON_PREFIX/bin/python3"
+    else
+        echo "Error: Could not locate python3 binary in Homebrew prefix ($PYTHON_PREFIX)"
+        exit 1
+    fi
+
+    if ! "$PYTHON_BIN" -c "import ssl" >/dev/null 2>&1; then
+        echo "Error: Homebrew python still missing SSL. Try: brew reinstall $PYTHON_FORMULA"
+        exit 1
+    fi
+
+    echo "Using Homebrew Python: $PYTHON_BIN"
+fi
 
 # 5. 가상환경 생성
 if [ ! -d "venv" ]; then
     echo "Creating virtual environment..."
-    python -m venv venv
+    "$PYTHON_BIN" -m venv venv
 fi
 
 # 6. 가상환경 활성화 및 패키지 설치
 echo "Installing Python packages..."
 source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 
 echo ""
 echo "Setup complete!"

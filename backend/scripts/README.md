@@ -18,10 +18,9 @@ cd backend/scripts
 
 This will:
 1. Install vips (via Homebrew)
-2. Install pyenv if needed
-3. Install Python 3.11.9
-4. Create virtual environment
-5. Install Python packages (pyvips, minio)
+2. Detect an SSL-enabled Python (prefers system python3, falls back to Homebrew `python@3.12`)
+3. Create virtual environment
+4. Install Python packages (pyvips, minio)
 
 ### Manual Setup
 
@@ -91,6 +90,24 @@ Example:
 python3 generate_test_tiles.py CMU-1.tiff test-image-001
 ```
 
+### Option 3: Full pipeline automation
+
+```bash
+cd backend/scripts
+./full-regenerate.sh [<image_path> <image_id>]
+```
+
+Default 값:
+- `image_path`: `JPG_Test.jpg`
+- `image_id`: `test-image-001`
+
+하는 일:
+1. 기존 `venv/` 삭제
+2. `setup.sh` 실행 (venv 재생성 + 의존성 설치)
+3. `dev.sh` 통해 가상환경 활성화
+4. MinIO 버킷 `histoflow-tiles/<image_id>/` 비우기 (가능하면)
+5. `generate_test_tiles.py` 실행 (타일 생성 & 업로드)
+
 ### What It Does
 
 1. Loads the image using pyvips
@@ -149,20 +166,26 @@ sudo apt-get install libvips-tools  # Ubuntu
 ## File Structure After Generation
 
 ```
-MinIO bucket: histoflow-tiles/
-└── test-image-001/
-    ├── image.dzi                    # DZI descriptor XML
-    └── image_files/
-        ├── 0/                       # Zoom level 0 (thumbnail)
-        │   └── 0_0.jpg
-        ├── 1/                       # Zoom level 1
-        │   ├── 0_0.jpg
-        │   └── 1_0.jpg
-        ├── 2/                       # Zoom level 2
-        │   ├── 0_0.jpg
-        │   ├── 1_0.jpg
-        │   ├── 2_0.jpg
-        │   └── 3_0.jpg
+backend/scripts/
+├── setup.sh           # Python 환경 설정
+├── dev.sh             # Python 가상환경 활성화
+├── generate_test_tiles.py
+├── full-regenerate.sh # 전체 파이프라인 자동화
+└── MinIO bucket: histoflow-tiles/
+    └── test-image-001/
+        ├── image.dzi                    # DZI descriptor XML
+        └── image_files/
+            ├── 0/                       # Zoom level 0 (thumbnail)
+            │   └── 0_0.jpg
+            ├── 1/                       # Zoom level 1
+            │   ├── 0_0.jpg
+            │   └── 1_0.jpg
+            ├── 2/                       # Zoom level 2
+            │   ├── 0_0.jpg
+            │   ├── 1_0.jpg
+            │   ├── 2_0.jpg
+            │   └── 3_0.jpg
+            └── ...                      # More zoom levels
         └── ...                      # More zoom levels
 ```
 
