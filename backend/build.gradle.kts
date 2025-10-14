@@ -25,6 +25,14 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-web")
 	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
+	
+	// AWS S3 SDK for MinIO (S3-compatible object storage)
+	implementation(platform("software.amazon.awssdk:bom:2.20.0"))
+	implementation("software.amazon.awssdk:s3")
+	
+	// Configuration processor for @ConfigurationProperties
+	annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
+	
 	developmentOnly("org.springframework.boot:spring-boot-devtools")
 	runtimeOnly("com.h2database:h2")
 	testImplementation("org.springframework.boot:spring-boot-starter-test")

@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import '../styles/HomePage.scss';
 
 function HomePage() {
-  const [image, setImage] = useState<File | null>(null);
+  const [_image, setImage] = useState<File | null>(null);
   // Likely won't be needed as real images are to big. Just here for testing
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
