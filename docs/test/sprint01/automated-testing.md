@@ -1,6 +1,6 @@
-# Sprint 01 Automated Tile Serving Checks
+# Sprint 01 Automated Tile Serving Checks [WIP]
 
-Use these scripted workflows to validate the environment with minimal manual intervention.
+> Automated e2e testing script WIP
 
 ## Prerequisites
 

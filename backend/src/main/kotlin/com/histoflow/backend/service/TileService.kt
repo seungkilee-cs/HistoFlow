@@ -7,6 +7,7 @@ import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectResponse
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 
 @Service
@@ -57,4 +58,85 @@ class TileService(
             throw IllegalArgumentException("Tile not found: level=$level, x=$x, y=$y")
         }
     }
+
+    fun listDatasets(limit: Int = 100, continuationToken: String? = null, prefix: String? = null): DatasetPage {
+        val aggregated = mutableMapOf<String, DatasetSummary>()
+
+        var token = continuationToken
+        var nextToken: String? = null
+
+        while (aggregated.size < limit) {
+            val requestBuilder = ListObjectsV2Request.builder()
+                .bucket(minioProps.buckets.tiles)
+                .maxKeys(1000)
+
+            if (!token.isNullOrBlank()) {
+                requestBuilder.continuationToken(token)
+            }
+
+            if (!prefix.isNullOrBlank()) {
+                requestBuilder.prefix(prefix)
+            }
+
+            val response = s3Client.listObjectsV2(requestBuilder.build())
+
+            response.contents()
+                .asSequence()
+                .mapNotNull { obj ->
+                    val key = obj.key()
+                    val datasetId = key.substringBefore('/', "")
+                    if (datasetId.isBlank()) {
+                        null
+                    } else {
+                        datasetId to obj
+                    }
+                }
+                .forEach { (datasetId, obj) ->
+                    val summary = aggregated.getOrPut(datasetId) {
+                        DatasetSummary(
+                            imageId = datasetId,
+                            totalObjects = 0,
+                            totalSizeBytes = 0,
+                            lastModifiedMillis = 0
+                        )
+                    }
+
+                    aggregated[datasetId] = summary.copy(
+                        totalObjects = summary.totalObjects + 1,
+                        totalSizeBytes = summary.totalSizeBytes + obj.size(),
+                        lastModifiedMillis = maxOf(summary.lastModifiedMillis, obj.lastModified().toEpochMilli())
+                    )
+                }
+
+            nextToken = response.nextContinuationToken()
+
+            if (nextToken.isNullOrBlank() || aggregated.size >= limit) {
+                break
+            } else {
+                token = nextToken
+            }
+        }
+
+        val sorted = aggregated.values
+            .sortedByDescending { it.lastModifiedMillis }
+
+        return DatasetPage(
+            datasets = sorted.take(limit),
+            nextContinuationToken = nextToken,
+            appliedPrefix = prefix.orEmpty()
+        )
+    }
 }
+
+data class DatasetSummary(
+    val imageId: String,
+    val totalObjects: Long,
+    val totalSizeBytes: Long,
+    val lastModifiedMillis: Long
+)
+
+data class DatasetPage(
+    val datasets: List<DatasetSummary>,
+    val nextContinuationToken: String?,
+    val appliedPrefix: String
+)

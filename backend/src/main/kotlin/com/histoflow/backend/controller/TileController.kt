@@ -6,7 +6,11 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.*
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody
 
 @RestController
@@ -73,5 +77,15 @@ class TileController(private val tileService: TileService) {
             logger.error("Tile not found: imageId={}, level={}, x={}, y={}", imageId, level, x, y)
             ResponseEntity.status(HttpStatus.NOT_FOUND).build()
         }
+    }
+
+    @GetMapping("/datasets")
+    fun listDatasets(
+        @RequestParam(required = false, defaultValue = "5") limit: Int,
+        @RequestParam(required = false, name = "continuationToken") token: String?,
+        @RequestParam(required = false, name = "prefix") prefix: String?
+    ): ResponseEntity<Any> {
+        val page = tileService.listDatasets(limit = limit.coerceIn(1, 50), continuationToken = token, prefix = prefix)
+        return ResponseEntity.ok(page)
     }
 }

@@ -2,11 +2,6 @@
 
 Cancer detection AI platform, inspired by [Lunit](https://www.lunit.io/).
 
-
-![Test Image](./assets/251014_22_49_20_HistoFlow.png)
-
-[Test Image Link](https://openslide.cs.cmu.edu/download/openslide-testdata/Generic-TIFF/)
-
 ## Quick Start
 
 ### Development Environment (All-in-One)
