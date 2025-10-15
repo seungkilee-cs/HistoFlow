@@ -15,6 +15,13 @@
 
 ## Manual Testing
 
+### 0. Optional: Script Permissions
+To make your life easier, you can run this from the root directory and proceed. You don't have to do this but it makes thinigs easier.
+
+```bash
+chmod +x scripts/*.sh
+```
+
 ### 1. Start MinIO
 
 ```bash
