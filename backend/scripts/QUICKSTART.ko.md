@@ -24,7 +24,7 @@ cd backend/scripts
 이거 실행하면:
 - vips 설치 (이미지 처리 라이브러리)
 - pyenv 설치 (파이썬 버전 관리)
-- Python 3.11.9 설치
+- Python 3.12 설치
 - 가상환경 만들고 패키지 설치
 
 끝나면 터미널 재시작하거나 `source ~/.zshrc` 실행
@@ -177,19 +177,6 @@ cd backend
 - **minio** (Python 패키지): MinIO/S3 클라이언트
   - 생성된 타일 업로드용
   - AWS S3 SDK 호환
-
----
-
-## 왜 이렇게 복잡함?
-
-간단하게 `pip install pyvips minio` 하면 안되냐고?
-
-안됨. 이유:
-1. **vips는 시스템 라이브러리**라 brew로 따로 깔아야함
-2. **Python 버전 통일** 안하면 나중에 "내 컴퓨터에선 되는데요?" 나옴
-3. **가상환경** 안쓰면 시스템 Python 꼬임
-
-그래서 setup.sh로 한방에 해결하게 만듦
 
 ---
 

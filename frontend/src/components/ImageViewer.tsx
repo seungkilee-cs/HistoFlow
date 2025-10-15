@@ -1,25 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import OpenSeadragon from 'openseadragon';
+import '../styles/ImageViewer.scss';
 
 interface ImageViewerProps {
   imageId: string;
 }
 
 /**
- * ImageViewer Component
- *
- * This component:
- * 1. Initializes OpenSeadragon viewer
- * 2. Configures it to load tiles from our backend API
- * 3. OpenSeadragon automatically requests tiles as user pans/zooms
- *
- * Data Flow:
- * - OSD loads DZI: GET http://localhost:8080/api/v1/tiles/{imageId}/image.dzi
- * - OSD parses XML to understand image pyramid structure
- * - OSD calculates visible tiles based on viewport
- * - OSD requests tiles: GET http://localhost:8080/api/v1/tiles/{imageId}/{level}/{x}_{y}.jpg
- * - Backend fetches from MinIO and streams back
- * - OSD renders tiles on canvas
+ * Thin OpenSeadragon wrapper so I can point at a MinIO dataset by imageId.
  */
 const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -34,40 +22,25 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
     // Initialize OpenSeadragon viewer
     const viewer = OpenSeadragon({
       element: viewerRef.current,
-
-      // Prefix for OSD UI controls (zoom buttons, etc.)
       prefixUrl: '//openseadragon.github.io/openseadragon/images/',
-
-      // CRITICAL: Point to your backend API DZI endpoint
-      // Backend runs on port 8080 regardless of frontend port
       tileSources: `http://localhost:8080/api/v1/tiles/${imageId}/image.dzi`,
-
-      // Viewer controls
-      showNavigator: true,              // Mini-map in corner
+      showNavigator: true,
       navigatorPosition: 'BOTTOM_RIGHT',
       showRotationControl: true,
       showHomeControl: true,
       showFullPageControl: true,
       showZoomControl: true,
-
-      // Performance settings
-      maxZoomPixelRatio: 2,            // Max zoom magnification
-      minZoomImageRatio: 0.8,          // How far to zoom out
-      visibilityRatio: 1.0,            // How much of image must be visible
-
-      // Tile loading settings
+      maxZoomPixelRatio: 2,
+      minZoomImageRatio: 0.8,
+      visibilityRatio: 1.0,
       crossOriginPolicy: 'Anonymous',
       ajaxWithCredentials: false,
-
-      // Initial zoom behavior
-      immediateRender: false,          // Load tiles before showing
-      blendTime: 0.5,                  // Fade-in animation
-
-      // Debugging (set to true to see what OSD is doing)
+      immediateRender: false,
+      blendTime: 0.5,
       debugMode: false
     });
 
-    // Event handlers for debugging
+    // Console breadcrumbs while I'm debugging tile fetches.
     viewer.addHandler('open', () => {
       console.log('OpenSeadragon: Image opened successfully');
       console.log(`   Image dimensions: ${viewer.world.getItemAt(0).getContentSize()}`);
@@ -84,8 +57,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
 
     viewer.addHandler('open-failed', (event: any) => {
       console.error('Failed to open image:', event);
-      console.error('   Check that backend is running on port 8080');
-      console.error('   Check that imageId exists in MinIO');
+      console.error('   Backend might be down or the dataset is missing in MinIO.');
     });
 
     osdInstanceRef.current = viewer;
@@ -100,22 +72,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
     };
   }, [imageId]); // Reinitialize if imageId changes
 
-  return (
-    <div
-      ref={viewerRef}
-      style={{
-        width: '100%',
-        height: '70vh',
-        minHeight: '520px',
-        borderRadius: '16px',
-        border: '1px solid rgba(15, 23, 42, 0.1)',
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #111827 100%)',
-        boxShadow: '0 20px 45px -25px rgba(15, 23, 42, 0.65)',
-        overflow: 'hidden',
-        position: 'relative'
-      }}
-    />
-  );
+  return <div ref={viewerRef} className="image-viewer" />;
 };
 
 export default ImageViewer;

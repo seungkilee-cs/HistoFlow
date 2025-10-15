@@ -31,7 +31,7 @@ cd backend/scripts
 이거 하나면 끝
 - vips 설치
 - pyenv 설치
-- Python 3.11.9 설치
+- Python 3.12 설치
 - 가상환경 만들기
 - 패키지 설치 (pyvips, minio)
 
@@ -152,7 +152,6 @@ pip install pyvips minio
 ### `vips: unable to call ...`
 ```bash
 brew install vips  # macOS
-sudo apt-get install libvips-tools  # Ubuntu
 ```
 
 ### `S3Error: Bucket does not exist`
@@ -163,40 +162,6 @@ sudo apt-get install libvips-tools  # Ubuntu
 - 백엔드 켜졌는지 확인: `./gradlew bootRun`
 - 브라우저 콘솔 에러 확인 (F12)
 - imageId 맞는지 확인: 기본값은 `test-image-001`
-
----
-
-## 생성되는 파일 구조
-
-```
-MinIO bucket: histoflow-tiles/
-└── test-image-001/
-    ├── image.dzi                    # DZI XML 메타데이터
-    └── image_files/
-        ├── 0/                       # 줌 레벨 0 (썸네일)
-        │   └── 0_0.jpg
-        ├── 1/                       # 줌 레벨 1
-        │   ├── 0_0.jpg
-        │   └── 1_0.jpg
-        ├── 2/                       # 줌 레벨 2
-        │   ├── 0_0.jpg
-        │   ├── 1_0.jpg
-        │   ├── 2_0.jpg
-        │   └── 3_0.jpg
-        └── ...                      # 더 많은 줌 레벨
-```
-
----
-
-## 설정값
-
-- 타일 포맷: JPEG (85% 퀄리티)
-- 타일 크기: 256×256 픽셀
-- 타일 겹침: 0 픽셀 (겹침 없음)
-- 피라미드 전략: 최하위 줌에서 타일 1개
-- 정리: 업로드 후 로컬 타일 삭제 (디스크 공간 절약)
-
----
 
 ## 나중에 할 일
 
