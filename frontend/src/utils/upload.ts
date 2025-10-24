@@ -81,15 +81,15 @@ async function getPresignedUrls(
     const txt = await resp.text().catch(() => '');
     throw new Error(`Failed to get presigned urls: ${resp.status} ${resp.statusText} ${txt}`);
   }
-  const js = (await resp.json()) as PresignResponse;
+  const response = (await resp.json()) as PresignResponse;
   const out: Record<number, string> = {};
-  if (Array.isArray(js.urls)) {
-    for (const u of js.urls) out[u.partNumber] = u.url;
+  if (Array.isArray(response.urls)) {
+    for (const u of response.urls) out[u.partNumber] = u.url;
     return out;
   }
   // single url case (shouldn't happen for multipart) but handle defensively
-  if (js.url && partNumbers.length === 1) {
-    out[partNumbers[0]] = js.url;
+  if (response.url && partNumbers.length === 1) {
+    out[partNumbers[0]] = response.url;
     return out;
   }
   throw new Error('Invalid presign response');
