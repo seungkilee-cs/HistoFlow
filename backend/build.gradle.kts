@@ -29,7 +29,6 @@ dependencies {
 	// AWS S3 SDK for MinIO (S3-compatible object storage)
 	implementation(platform("software.amazon.awssdk:bom:2.20.0"))
 	implementation("software.amazon.awssdk:s3")
-	implementation("software.amazon.awssdk:s3-presigner")
 	
 	// Configuration processor for @ConfigurationProperties
 	annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
