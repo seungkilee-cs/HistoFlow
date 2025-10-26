@@ -1,5 +1,6 @@
 package com.histoflow.backend.config
 
+import io.minio.MinioClient
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
@@ -22,6 +23,14 @@ class MinioConfig(private val props: MinioProperties) {
                 )
             )
             .forcePathStyle(true) // Required for MinIO
+            .build()
+    }
+
+    @Bean
+    fun minioClient(): MinioClient {
+        return MinioClient.builder()
+            .endpoint(props.endpoint)
+            .credentials(props.accessKey, props.secretKey)
             .build()
     }
 }

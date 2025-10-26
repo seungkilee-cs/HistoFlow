@@ -12,6 +12,7 @@ The decision is between housing each component in its own separate Git repositor
 
 We will adopt a monorepo structure for the entire HistoFlow project. All source code for the frontend, backend, services, shared libraries, and documentation will reside in a single Git repository.
 The proposed top-level directory structure will be:
+```
 histoflow/
 ├── frontend/
 ├── backend/
@@ -22,7 +23,7 @@ histoflow/
 ├── docs/
 └── libs/
     └── python-utils/
-
+```
 ## Considered Options
 
 ### Option 1: Monorepo (Chosen)

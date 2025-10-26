@@ -28,7 +28,7 @@ We will implement the **Upload-First Pattern** for handling all large file proce
 5. **Processing:** The tiling service receives the job message. It then acts as a client to MinIO, first downloading the file, processing it to generate tiles, and finally uploading the resulting tiles to a permanent bucket.
 
 ### **Data Flow Diagram**
-
+```
 The data flow for this pattern is decoupled and asynchronous:  
 (1) GET /presigned-url  
 \+--------------+     \+-------------+  
@@ -55,6 +55,7 @@ The data flow for this pattern is decoupled and asynchronous:
                       \+---------------+  
                       | MinIO Storage |  
                       \+---------------+
+```
 
 **Note on Diagram Arrows (Steps 6 and 7):** The arrows between the Tiling Service and MinIO represent the direction of **data flow**. The Tiling Service is the actor that **initiates** both requests:
 

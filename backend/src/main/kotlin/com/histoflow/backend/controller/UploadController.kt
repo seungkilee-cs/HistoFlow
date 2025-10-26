@@ -1,7 +1,9 @@
-package com.histoflow.api
+package com.histoflow.backend.controller
 
 import io.minio.GetPresignedObjectUrlArgs
 import io.minio.MinioClient
+import io.minio.MakeBucketArgs
+import io.minio.BucketExistsArgs
 import io.minio.http.Method
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
@@ -33,9 +35,17 @@ class UploadController(private val minioClient: MinioClient) { // Assuming Minio
             val objectName = "$imageId/${request.fileName}"
 
             // check if the bucket exists and create it if it doesn't. In prod, we prob want to do this upon start
-            val bucketExists = minioClient.bucketExists { it.bucket(bucketName) }
+            val bucketExists = minioClient.bucketExists(
+                BucketExistsArgs.builder()
+                    .bucket(bucketName)
+                    .build()
+            )
             if (!bucketExists) {
-                minioClient.makeBucket { it.bucket(bucketName) }
+                minioClient.makeBucket(
+                    MakeBucketArgs.builder()
+                        .bucket(bucketName)
+                        .build()
+                )
                 println("Bucket '$bucketName' created.")
             }
 

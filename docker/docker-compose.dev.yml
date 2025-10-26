@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  minio:
+    profiles: ["dev"]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  backend:
+    profiles: ["dev"]
+    ports:
+      - "8080:8080"
+
+  tiling:
+    profiles: ["dev"]
+    ports:
+      - "8000:8000"
