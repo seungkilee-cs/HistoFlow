@@ -57,5 +57,5 @@ docker compose \
 
 ## 3. Cleanup
 
-- Stop Compose stack (see above) and remove `/tmp/histoflow_tiling` if created. Should be autoremoved
+- Stop Compose stack (see above) and remove `/tmp/histoflow_tiling` if created.
 - Optionally delete MinIO buckets using the console or `mc`.
