@@ -19,6 +19,7 @@ Optional arguments:
   --backend-url <url>      Backend base URL (default: http://localhost:8080).
   --file-name <name>       Override filename sent to backend (default: source filename).
   --content-type <type>    MIME type for upload (default: application/octet-stream).
+  --dataset-name <name>    Friendly dataset name to send with the upload request.
   --help                   Show this message and exit.
 
 Examples:
@@ -43,6 +44,7 @@ BACKEND_URL="http://localhost:8080"
 FILE_PATH=""
 FILE_NAME_OVERRIDE=""
 CONTENT_TYPE="application/octet-stream"
+DATASET_NAME=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -61,6 +63,10 @@ while [[ $# -gt 0 ]]; do
     --content-type)
       shift || abort "Missing value for --content-type"
       CONTENT_TYPE="$1"
+      ;;
+    --dataset-name)
+      shift || abort "Missing value for --dataset-name"
+      DATASET_NAME="$1"
       ;;
     --help|-h)
       show_usage
@@ -85,7 +91,8 @@ INIT_ENDPOINT="$BACKEND_URL/api/v1/uploads/initiate"
 REQUEST_BODY=$(jq -n \
   --arg fileName "$FILE_NAME" \
   --arg contentType "$CONTENT_TYPE" \
-  '{fileName: $fileName, contentType: $contentType}')
+  --arg datasetName "$DATASET_NAME" \
+  '{fileName: $fileName, contentType: $contentType} + (if ($datasetName | length) > 0 then {datasetName: $datasetName} else {} end)')
 
 echo "Requesting pre-signed URL from $INIT_ENDPOINT"
 RESPONSE_JSON=$(curl -sS -f -X POST "$INIT_ENDPOINT" \
@@ -96,11 +103,12 @@ echo "Backend response: $RESPONSE_JSON"
 
 UPLOAD_URL=$(echo "$RESPONSE_JSON" | jq -r '.uploadUrl')
 OBJECT_NAME=$(echo "$RESPONSE_JSON" | jq -r '.objectName')
+IMAGE_ID=$(echo "$RESPONSE_JSON" | jq -r '.imageId // empty')
+DATASET_NAME_RESPONSE=$(echo "$RESPONSE_JSON" | jq -r '.datasetName // empty')
 
 [[ "$UPLOAD_URL" != "null" ]] || abort "Backend response missing uploadUrl"
 [[ "$OBJECT_NAME" != "null" ]] || abort "Backend response missing objectName"
-
-IMAGE_ID="${OBJECT_NAME%%/*}"
+[[ -n "$IMAGE_ID" ]] || IMAGE_ID="${OBJECT_NAME%%/*}"
 
 echo "Uploading '$FILE_PATH' to MinIO via pre-signed URL"
 
@@ -110,5 +118,8 @@ curl -f -X PUT "$UPLOAD_URL" \
 
 echo "Upload successful."
 echo "Image ID: $IMAGE_ID"
+if [[ -n "$DATASET_NAME_RESPONSE" ]]; then
+  echo "Dataset name: $DATASET_NAME_RESPONSE"
+fi
 echo "Object name: $OBJECT_NAME"
 echo "Next step: trigger tiling service with image_id='$IMAGE_ID', source_bucket='unprocessed-slides', source_object_name='$OBJECT_NAME'"

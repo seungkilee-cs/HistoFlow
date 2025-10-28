@@ -15,6 +15,7 @@ CLEANUP_TEMP="true"
 SLIDE_FILE=""
 CONTENT_TYPE="application/octet-stream"
 WAIT_FOR_SERVICES="true"
+DATASET_NAME=""
 
 cleanup() {
   if [[ "$CLEANUP_TEMP" == "true" && -d "$TEMP_DIR" ]]; then
@@ -37,6 +38,7 @@ Optional arguments:
   --minio-url <url>        MinIO base URL (default: ${MINIO_URL}).
   --tiling-url <url>       Tiling service base URL (default: ${TILING_URL}).
   --content-type <type>    MIME type for upload (default: ${CONTENT_TYPE}).
+  --dataset-name <name>    Friendly dataset name passed to upload initiation.
   --no-wait                Skip waiting for services to become healthy.
   --keep-temp              Preserve temp artifacts for inspection.
   --help                   Show this help message.
@@ -72,13 +74,15 @@ wait_for_endpoint() {
 trigger_tiling_job() {
   local image_id="$1"
   local object_name="$2"
+  local dataset_name="$3"
 
   local payload
   payload=$(jq -n \
     --arg imageId "$image_id" \
     --arg bucket "unprocessed-slides" \
     --arg objectName "$object_name" \
-    '{image_id: $imageId, source_bucket: $bucket, source_object_name: $objectName}')
+    --arg datasetName "$dataset_name" \
+    '{image_id: $imageId, source_bucket: $bucket, source_object_name: $objectName} + (if ($datasetName | length) > 0 then {dataset_name: $datasetName} else {} end)')
 
   echo "Triggering tiling job for image_id=${image_id}"
   curl -sSf -X POST "${TILING_URL}/jobs/tile-image" \
@@ -121,6 +125,10 @@ while [[ $# -gt 0 ]]; do
     --content-type)
       shift || exit 1
       CONTENT_TYPE="$1"
+      ;;
+    --dataset-name)
+      shift || exit 1
+      DATASET_NAME="$1"
       ;;
     --no-wait)
       WAIT_FOR_SERVICES="false"
@@ -168,18 +176,23 @@ echo "Running upload simulation"
   --file "$SLIDE_FILE" \
   --backend-url "$BACKEND_URL" \
   --content-type "$CONTENT_TYPE" \
+  ${DATASET_NAME:+--dataset-name "$DATASET_NAME"} \
   | tee "$UPLOAD_LOG"
 
 IMAGE_ID=$(awk -F': ' '/^Image ID:/ {print $2}' "$UPLOAD_LOG")
 OBJECT_NAME=$(awk -F': ' '/^Object name:/ {print $2}' "$UPLOAD_LOG")
+DATASET_NAME_EFFECTIVE=$(awk -F': ' '/^Dataset name:/ {print $2}' "$UPLOAD_LOG")
 
 [[ -n "$IMAGE_ID" ]] || { echo "Failed to extract image ID" >&2; exit 1; }
 [[ -n "$OBJECT_NAME" ]] || { echo "Failed to extract object name" >&2; exit 1; }
 
 echo "Image ID resolved to ${IMAGE_ID}"
+if [[ -n "$DATASET_NAME_EFFECTIVE" ]]; then
+  echo "Dataset name resolved to ${DATASET_NAME_EFFECTIVE}"
+fi
 
 echo "Triggering tiling job"
-trigger_tiling_job "$IMAGE_ID" "$OBJECT_NAME"
+trigger_tiling_job "$IMAGE_ID" "$OBJECT_NAME" "$DATASET_NAME_EFFECTIVE"
 
 echo "Waiting for tiles to appear..."
 # Poll backend for DZI availability

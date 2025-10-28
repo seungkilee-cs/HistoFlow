@@ -1,19 +1,23 @@
 import React, { useState } from "react";
-import axios from "axios";
+import axios, { AxiosProgressEvent } from "axios";
 
 // defining the shape of the response from our backend's /initiate endpoint
 interface InitiateUploadResponse {
   uploadUrl: string;
   objectName: string;
+  imageId: string;
+  datasetName: string;
 }
 
 const FileUpload: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [datasetName, setDatasetName] = useState<string>("");
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadStatus, setUploadStatus] = useState<
     "idle" | "uploading" | "success" | "error"
   >("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [latestResponse, setLatestResponse] = useState<InitiateUploadResponse | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -42,11 +46,17 @@ const FileUpload: React.FC = () => {
         {
           fileName: selectedFile.name,
           contentType: selectedFile.type,
+          datasetName: datasetName || undefined,
         },
       );
 
-      const { uploadUrl, objectName } = initiateResponse.data;
-      console.log("Received pre-signed URL:", uploadUrl);
+      const { uploadUrl, objectName, imageId, datasetName: resolvedName } =
+        initiateResponse.data;
+      setLatestResponse(initiateResponse.data);
+      console.log(
+        "Received pre-signed URL:",
+        { uploadUrl, objectName, imageId, datasetName: resolvedName },
+      );
 
       // then upload the file directly to MinIO using the pre-signed url
       console.log("Uploading file directly to MinIO...");
@@ -54,7 +64,7 @@ const FileUpload: React.FC = () => {
         headers: {
           "Content-Type": selectedFile.type,
         },
-        onUploadProgress: (progressEvent) => {
+        onUploadProgress: (progressEvent: AxiosProgressEvent) => {
           const percentCompleted = Math.round(
             (progressEvent.loaded * 100) / (progressEvent.total ?? 1),
           );
@@ -80,6 +90,12 @@ const FileUpload: React.FC = () => {
     <div>
       <h2>Upload Image</h2>
       <input type="file" onChange={handleFileChange} />
+      <input
+        type="text"
+        placeholder="Dataset name (optional)"
+        value={datasetName}
+        onChange={(event) => setDatasetName(event.target.value)}
+      />
       <button
         onClick={handleUpload}
         disabled={!selectedFile || uploadStatus === "uploading"}
@@ -93,6 +109,13 @@ const FileUpload: React.FC = () => {
 
       {uploadStatus === "success" && <p>Upload successful!</p>}
       {uploadStatus === "error" && <p>{errorMessage}</p>}
+      {latestResponse && (
+        <div>
+          <p>Image ID: {latestResponse.imageId}</p>
+          <p>Object name: {latestResponse.objectName}</p>
+          <p>Dataset name: {latestResponse.datasetName}</p>
+        </div>
+      )}
     </div>
   );
 };

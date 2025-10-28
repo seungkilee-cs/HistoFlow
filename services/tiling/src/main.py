@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
@@ -13,7 +15,8 @@ tiling_service = TilingService()
 class TilingJob(BaseModel):
     image_id: str
     source_bucket: str
-    source_object_name: str # e.g., "unprocessed/image_id/my-file.svs"
+    source_object_name: str  # e.g., "unprocessed/image_id/my-file.svs"
+    dataset_name: Optional[str] = None
 
 @app.post("/jobs/tile-image")
 async def create_tiling_job(job: TilingJob, background_tasks: BackgroundTasks):
@@ -28,7 +31,8 @@ async def create_tiling_job(job: TilingJob, background_tasks: BackgroundTasks):
         tiling_service.process_image,
         image_id=job.image_id,
         source_object_name=job.source_object_name,
-        source_bucket=job.source_bucket
+        source_bucket=job.source_bucket,
+        dataset_name=job.dataset_name,
     )
     
     # Respond immediately to the caller (your Kotlin backend)

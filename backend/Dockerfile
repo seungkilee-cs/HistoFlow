@@ -1,7 +1,7 @@
 # Multi-stage build for HistoFlow Kotlin backend
 
 # -------- Build stage --------
-FROM gradle:8.10.2-jdk17-alpine AS builder
+FROM gradle:8.10.2-jdk17-jammy AS builder
 WORKDIR /workspace
 
 # Copy project files into the build context
@@ -21,7 +21,7 @@ RUN ./gradlew bootJar --no-daemon \
     && cp "$JAR_PATH" app.jar
 
 # -------- Runtime stage --------
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
 # Copy the normalized Spring Boot jar built in the previous stage
