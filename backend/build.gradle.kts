@@ -32,6 +32,7 @@ dependencies {
 
 	// MinIO Java SDK (used by UploadController for presigned URLs)
 	implementation("io.minio:minio:8.5.5")
+
 	
 	// Configuration processor for @ConfigurationProperties
 	annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")

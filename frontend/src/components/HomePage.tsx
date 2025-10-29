@@ -1,11 +1,15 @@
 import { useState, useRef } from 'react';
 import '../styles/HomePage.scss';
+import { uploadFileWithPresignedMultipart } from '../utils/upload';
 
 function HomePage() {
   const [_image, setImage] = useState<File | null>(null);
   // Likely won't be needed as real images are to big. Just here for testing
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<number>(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -13,6 +17,8 @@ function HomePage() {
       const file = e.dataTransfer.files[0];
       setImage(file);
       setPreview(URL.createObjectURL(file));
+      // kick off upload
+      startUpload(file);
     }
   };
 
@@ -25,6 +31,30 @@ function HomePage() {
       const file = e.target.files[0];
       setImage(file);
       setPreview(URL.createObjectURL(file));
+      // kick off upload
+      startUpload(file);
+    }
+  };
+
+  // Upload function with progress updates
+  const startUpload = async (file: File) => {
+    setUploading(true);
+    setUploadError(null);
+    setProgress(0);
+    try {
+      // Shooting for 64MB concurrency with 4 * 16MB parts
+      await uploadFileWithPresignedMultipart(file, {
+        concurrency: 4, // Number of parallel upload parts... 4 HTTP calls run at the same time
+        partSizeHint: 16 * 1024 * 1024, // How big each part should be (16MB).. S3 minimum is 5MB
+        onProgress: (uploaded, total) => {
+          setProgress(Math.round((uploaded / total) * 100));
+        },
+      });
+      setProgress(100);
+    } catch (err: any) {
+      setUploadError(err?.message || String(err));
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -62,6 +92,19 @@ function HomePage() {
               alt="Preview"
               className="preview-image"
             />
+          </div>
+        )}
+
+        {/* Upload progress indicator */}
+        {uploading && (
+          <div style={{ marginTop: '1rem', color: '#fff' }}>
+            Uploading... {progress}%
+          </div>
+        )}
+        {/* Error message */}
+        {uploadError && (
+          <div style={{ marginTop: '1rem', color: '#ff6b6b' }}>
+            Error: {uploadError}
           </div>
         )}
       </div>
