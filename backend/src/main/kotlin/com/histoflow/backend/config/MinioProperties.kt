@@ -5,6 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "minio")
 data class MinioProperties(
     var endpoint: String = "",
+    var publicEndpoint: String = "",
     var accessKey: String = "",
     var secretKey: String = "",
     val buckets: Buckets = Buckets()

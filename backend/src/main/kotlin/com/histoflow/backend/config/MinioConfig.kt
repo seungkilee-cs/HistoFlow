@@ -1,5 +1,6 @@
 package com.histoflow.backend.config
 
+import io.minio.MinioClient
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
@@ -26,15 +27,12 @@ class MinioConfig(private val props: MinioProperties) {
             .build()
     }
 
-    fun s3Presigner(): S3Presigner {
-        return S3Presigner.builder()
-            .endpointOverride(URI.create(props.endpoint))
-            .region(Region.US_EAST_1)
-            .credentialsProvider(
-                StaticCredentialsProvider.create(
-                    AwsBasicCredentials.create(props.accessKey, props.secretKey)
-                )
-            )
+    @Bean
+    fun minioClient(): MinioClient {
+        return MinioClient.builder()
+            .endpoint(props.endpoint)
+            .credentials(props.accessKey, props.secretKey)
+
             .build()
     }
 }
