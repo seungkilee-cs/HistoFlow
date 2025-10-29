@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  tiling-service:
+    # Dockerfile directory
+    build: .
+    # container name for id
+    container_name: histoflow-tiling-service
+    # forward port 8000 on local machine to port 8000 inside the container
+    ports:
+      - "8000:8000"
+    # mount local source code into the container
+    # when a file is loaded on machine, it instantly updates inside the container and uvicorn will automatically reload the server.
+    volumes:
+      - ./src:/app/src
+    # load environment variables from .env file
+    env_file:
+      - ./.env

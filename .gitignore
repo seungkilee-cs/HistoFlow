@@ -48,3 +48,7 @@ docker-compose.override.yml
 # Package managers
 .pnpm-debug.log*
 docs/devlog/*
+
+# dev
+archive/
+archive/*

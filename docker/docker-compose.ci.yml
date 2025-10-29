@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  minio:
+    profiles: ["ci"]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  backend:
+    profiles: ["ci"]
+    environment:
+      SPRING_PROFILES_ACTIVE: "ci"
+    ports:
+      - "8080:8080"
+
+  tiling:
+    profiles: ["ci"]
+    ports:
+      - "8000:8000"
