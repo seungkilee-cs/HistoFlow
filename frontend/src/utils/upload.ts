@@ -71,6 +71,7 @@ async function getPresignedUrls(
   partNumbers: number[],
   signal?: AbortSignal
 ): Promise<Record<number, string>> {
+  console.log("GET SOME")
   const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/multipart/presign`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -82,6 +83,7 @@ async function getPresignedUrls(
     throw new Error(`Failed to get presigned urls: ${resp.status} ${resp.statusText} ${txt}`);
   }
   const response = (await resp.json()) as PresignResponse;
+  console.log(response)
   const out: Record<number, string> = {};
   if (Array.isArray(response.urls)) {
     for (const u of response.urls) out[u.partNumber] = u.url;
@@ -104,6 +106,7 @@ async function uploadPartWithRetries(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const putResp = await fetch(url, { method: 'PUT', body: blob, signal });
+      console.log(putResp)
       if (!putResp.ok) {
         const txt = await putResp.text().catch(() => '');
         throw new Error(`Part upload failed ${putResp.status} ${putResp.statusText} ${txt}`);
@@ -125,12 +128,14 @@ async function completeUploadOnServer(
   parts: Array<{ partNumber: number; etag: string }>,
   signal?: AbortSignal
 ) {
+  console.log("DO IT")
   const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/multipart/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ uploadId, key, parts }),
     signal,
   });
+  console.log(resp)
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
     throw new Error(`Complete failed: ${resp.status} ${resp.statusText} ${txt}`);
@@ -180,6 +185,7 @@ export async function uploadFileWithPresignedMultipart(
   } = {}
 ): Promise<{ success: boolean; key?: string }> {
   if (!file) throw new Error('No file provided');
+  console.log("STarting")
 
   // try to load persisted state (for resume)
   let persisted = loadPersisted(file);
@@ -200,17 +206,20 @@ export async function uploadFileWithPresignedMultipart(
     persisted = { uploadId, key, partSize, uploadedParts: {} };
     savePersisted(file, persisted);
   }
+  console.log(file.size)
 
   const totalSize = file.size;
   const totalParts = Math.ceil(totalSize / partSize);
 
   const uploadedParts: Record<number, string> = persisted.uploadedParts || {};
+  console.log("PARTS")
   let uploadedBytes = Object.keys(uploadedParts).reduce((acc, p) => {
     const partNumber = Number(p);
     const start = (partNumber - 1) * partSize;
     const end = Math.min(totalSize, start + partSize);
     return acc + (end - start);
   }, 0);
+  console.log("PRE PARADE")
 
   onProgress?.(uploadedBytes, totalSize);
 
@@ -237,9 +246,11 @@ export async function uploadFileWithPresignedMultipart(
     }
 
     const url = urlMap[partNumber];
+    console.log(url)
     if (!url) throw new Error('No presigned url for part ' + partNumber);
 
     const etag = await uploadPartWithRetries(url, blob, 3, signal);
+    console.log("TAGS")
     uploadedParts[partNumber] = etag || '';
     persisted.uploadedParts = persisted.uploadedParts || {};
     persisted.uploadedParts[partNumber] = etag;
@@ -247,9 +258,11 @@ export async function uploadFileWithPresignedMultipart(
 
     // update progress
     uploadedBytes += blob.size;
+    console.log("UPLOAD PROGRESS")
     onProgress?.(uploadedBytes, totalSize);
   };
 
+  console.log("WORK IT")
   // run workers
   await runWorkers(totalParts, concurrency, async (partNumber) => {
     // skip already uploaded parts
@@ -258,6 +271,7 @@ export async function uploadFileWithPresignedMultipart(
     await uploadSingle(partNumber);
   });
 
+  console.log(uploadedParts)
   // Prepare parts array
   const partsArray = Object.entries(uploadedParts)
     .map(([k, v]) => ({ partNumber: Number(k), etag: v }))
