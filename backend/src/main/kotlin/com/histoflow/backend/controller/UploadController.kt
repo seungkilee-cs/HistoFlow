@@ -1,13 +1,14 @@
 package com.histoflow.backend.controller
 
-import io.minio.GetPresignedObjectUrlArgs
-import io.minio.MinioClient
-import io.minio.MakeBucketArgs
-import io.minio.BucketExistsArgs
 import com.histoflow.backend.config.MinioProperties
 import com.histoflow.backend.service.TilingTriggerService
+import io.minio.BucketExistsArgs
+import io.minio.GetPresignedObjectUrlArgs
+import io.minio.MakeBucketArgs
+import io.minio.MinioClient
 import io.minio.http.Method
 import org.slf4j.LoggerFactory
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -16,14 +17,27 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-// data class for the request body from the frontend
+/**
+ * Request body for initiating an upload
+ * 
+ * @property fileName Name of the file to upload
+ * @property contentType MIME type of the file
+ * @property datasetName Optional friendly name for the dataset
+ */
 data class InitiateUploadRequest(
     val fileName: String,
     val contentType: String,
     val datasetName: String? = null
 )
 
-// data class for the response body sent to the frontend
+/**
+ * Response body for upload initiation
+ * 
+ * @property uploadUrl Pre-signed URL for uploading to MinIO
+ * @property objectName Full object path in MinIO (imageId/fileName)
+ * @property imageId Unique identifier for the image
+ * @property datasetName Resolved dataset name (filename if not provided)
+ */
 data class InitiateUploadResponse(
     val uploadUrl: String,
     val objectName: String,
@@ -31,18 +45,41 @@ data class InitiateUploadResponse(
     val datasetName: String
 )
 
+/**
+ * Request body for completing an upload
+ * 
+ * @property objectName Full object path in MinIO
+ * @property imageId Optional image ID (extracted from objectName if not provided)
+ * @property datasetName Optional dataset name
+ */
 data class CompleteUploadRequest(
     val objectName: String,
     val imageId: String? = null,
     val datasetName: String? = null
 )
 
+/**
+ * Response body for upload completion
+ * 
+ * @property status Status of the request (accepted, error)
+ * @property imageId Image identifier
+ * @property message Human-readable status message
+ */
 data class CompleteUploadResponse(
     val status: String,
     val imageId: String,
     val message: String
 )
 
+/**
+ * Controller handling file upload workflow
+ * 
+ * Implements the upload-first pattern:
+ * 1. Frontend requests pre-signed URL (/initiate)
+ * 2. Frontend uploads directly to MinIO
+ * 3. Frontend notifies backend of completion (/complete)
+ * 4. Backend triggers tiling microservice
+ */
 @RestController
 @RequestMapping("/api/v1/uploads")
 class UploadController(
@@ -53,122 +90,196 @@ class UploadController(
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    // This is the endpoint the frontend will call to get the pre-signed URL.
+    /**
+     * Initiate upload by generating a pre-signed URL
+     * 
+     * This endpoint:
+     * - Generates a unique image ID
+     * - Creates the bucket if it doesn't exist
+     * - Returns a pre-signed URL valid for 15 minutes
+     * 
+     * @param request Upload initiation request
+     * @return Pre-signed URL and metadata
+     */
     @PostMapping("/initiate")
-    fun initiateUpload(@RequestBody request: InitiateUploadRequest): ResponseEntity<InitiateUploadResponse> {
-        try {
+    fun initiateUpload(
+        @RequestBody request: InitiateUploadRequest
+    ): ResponseEntity<InitiateUploadResponse> {
+        return try {
             // Define the bucket where the raw file will be temporarily stored
             val bucketName = minioProperties.buckets.raw
-            logger.info("InitiateUpload request: fileName='{}', contentType='{}', datasetName='{}', bucket='{}'",
+            
+            logger.info(
+                "InitiateUpload request: fileName='{}', contentType='{}', datasetName='{}', bucket='{}'",
                 request.fileName,
                 request.contentType,
                 request.datasetName,
                 bucketName
             )
 
-            // best practice - create a unique ID for the object to avoid name collisions
+            // Generate unique ID for the object to avoid name collisions
             val imageId = UUID.randomUUID().toString()
             val objectName = "$imageId/${request.fileName}"
             val datasetName = request.datasetName?.takeIf { it.isNotBlank() } ?: request.fileName
 
-            // check if the bucket exists and create it if it doesn't. In prod, we prob want to do this upon start
-            val bucketExists = minioClient.bucketExists(
-                BucketExistsArgs.builder()
-                    .bucket(bucketName)
-                    .build()
-            )
-            if (!bucketExists) {
-                minioClient.makeBucket(
-                    MakeBucketArgs.builder()
-                        .bucket(bucketName)
-                        .build()
-                )
-                println("Bucket '$bucketName' created.")
-            }
+            // Ensure bucket exists (in production, do this at startup)
+            ensureBucketExists(bucketName)
 
-            // logic to generate the pre-signed URL
-            println("Generating pre-signed URL for object: $objectName")
+            // Generate pre-signed URL for PUT operation
+            logger.debug("Generating pre-signed URL for object: {}", objectName)
             val presignedUrl = minioClient.getPresignedObjectUrl(
                 GetPresignedObjectUrlArgs.builder()
-                    .method(Method.PUT) // grant permission to upload (PUT) a file
+                    .method(Method.PUT)  // Grant permission to upload
                     .bucket(bucketName)
-                    . `object`(objectName)
-                    .expiry(15, TimeUnit.MINUTES) // url will be valid for arbitrary amount of itme. 15 minutes for now -> may need to check on the timeout for the larger files? -> seems like that according to the docs. So we may need to think about multi part upload. For now, test with 200MB files for poc.
+                    .`object`(objectName)
+                    .expiry(15, TimeUnit.MINUTES)  // URL valid for 15 minutes
                     .build()
             )
-            println("Successfully generated URL.")
+            logger.debug("Successfully generated pre-signed URL")
 
-            // once the url is generated, send it back to the frontend in the response body
+            // Return response with pre-signed URL and metadata
             val response = InitiateUploadResponse(
                 uploadUrl = presignedUrl,
                 objectName = objectName,
                 imageId = imageId,
                 datasetName = datasetName
             )
+            
             logger.info(
                 "InitiateUpload response: imageId='{}', objectName='{}', datasetName='{}'",
                 response.imageId,
                 response.objectName,
                 response.datasetName
             )
-            return ResponseEntity.ok(response)
+            
+            ResponseEntity.ok(response)
 
         } catch (e: Exception) {
-            println("Error generating pre-signed URL: ${e.message}")
-            e.printStackTrace()
-            return ResponseEntity.internalServerError().build()
+            logger.error("Failed to initiate upload: {}", e.message, e)
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(
+                    InitiateUploadResponse(
+                        uploadUrl = "",
+                        objectName = "",
+                        imageId = "",
+                        datasetName = ""
+                    )
+                )
         }
     }
 
+    /**
+     * Complete upload and trigger tiling
+     * 
+     * This endpoint:
+     * - Receives notification that upload to MinIO completed
+     * - Triggers the tiling microservice asynchronously
+     * - Returns immediately (tiling happens in background)
+     * 
+     * @param request Upload completion notification
+     * @return Acceptance confirmation
+     */
     @PostMapping("/complete")
-    fun completeUpload(@RequestBody request: CompleteUploadRequest): ResponseEntity<CompleteUploadResponse> {
+    fun completeUpload(
+        @RequestBody request: CompleteUploadRequest
+    ): ResponseEntity<CompleteUploadResponse> {
+        val resolvedImageId = request.imageId ?: request.objectName.substringBefore('/')
+        
+        logger.info(
+            "CompleteUpload request: imageId='{}', objectName='{}', datasetName='{}'",
+            resolvedImageId,
+            request.objectName,
+            request.datasetName
+        )
+
         return try {
-            val resolvedImageId = request.imageId ?: request.objectName.substringBefore('/')
+            // ✅ Add null check for bucket configuration
+            val rawBucket = minioProperties.buckets.raw
+                ?: throw IllegalStateException("MinIO raw bucket not configured")
 
-            logger.info(
-                "CompleteUpload request: imageId='{}', objectName='{}', datasetName='{}'",
-                resolvedImageId,
-                request.objectName,
-                request.datasetName
-            )
+            logger.debug("Using raw bucket: {}", rawBucket)
 
+            // Trigger tiling microservice
             tilingTriggerService.triggerTiling(
                 imageId = resolvedImageId,
-                sourceBucket = minioProperties.buckets.raw,
+                sourceBucket = rawBucket,
                 sourceObjectName = request.objectName,
                 datasetName = request.datasetName
             )
 
+            // Return success response
             val response = CompleteUploadResponse(
                 status = "accepted",
                 imageId = resolvedImageId,
-                message = "Tiling job initiated"
+                message = "Tiling job initiated successfully"
             )
+            
             logger.info(
-                "CompleteUpload response: status='{}', imageId='{}', message='{}'",
-                response.status,
+                "[O] CompleteUpload success: imageId='{}', status='{}'",
                 response.imageId,
-                response.message
+                response.status
             )
 
-            ResponseEntity.ok(
-                response
-            )
-        } catch (e: Exception) {
+            ResponseEntity.ok(response)
+
+        } catch (e: IllegalStateException) {
+            // Tiling service call failed or configuration error
             logger.error(
-                "CompleteUpload failed: imageId='{}', objectName='{}', datasetName='{}'",
-                request.imageId,
-                request.objectName,
-                request.datasetName,
+                "[X] Tiling trigger failed: imageId='{}', error='{}'",
+                resolvedImageId,
+                e.message,
                 e
             )
-            ResponseEntity.internalServerError().body(
+            
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                 CompleteUploadResponse(
                     status = "error",
-                    imageId = request.imageId.orEmpty(),
+                    imageId = resolvedImageId,
                     message = "Failed to initiate tiling: ${e.message}"
                 )
             )
+
+        } catch (e: Exception) {
+            // Unexpected error
+            logger.error(
+                "[X] Unexpected error in CompleteUpload: imageId='{}'",
+                resolvedImageId,
+                e
+            )
+            
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                CompleteUploadResponse(
+                    status = "error",
+                    imageId = resolvedImageId,
+                    message = "Internal server error: ${e.message}"
+                )
+            )
+        }
+    }
+
+
+    /**
+     * Ensure MinIO bucket exists, create if not
+     * 
+     * @param bucketName Name of the bucket to check/create
+     */
+    private fun ensureBucketExists(bucketName: String) {
+        val exists = minioClient.bucketExists(
+            BucketExistsArgs.builder()
+                .bucket(bucketName)
+                .build()
+        )
+        
+        if (!exists) {
+            logger.info("Creating bucket: {}", bucketName)
+            minioClient.makeBucket(
+                MakeBucketArgs.builder()
+                    .bucket(bucketName)
+                    .build()
+            )
+            logger.info("Bucket '{}' created successfully", bucketName)
+        } else {
+            logger.debug("Bucket '{}' already exists", bucketName)
         }
     }
 }
