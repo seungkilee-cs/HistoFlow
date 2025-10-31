@@ -23,7 +23,10 @@ class UploadService(private val s3Client: S3Client, private val s3Presigner: S3P
     fun initiateMultipartUpload(filename: String, contentType: String?, partSizeHint: Long?): InitiateResult {
         val key = "uploads/${UUID.randomUUID()}-$filename"
         val req = CreateMultipartUploadRequest.builder()
-            .bucket(props.buckets.tiles)
+            // For raw slide uploads we want to store the parts in the 'uploads' bucket
+            // (configured as minio.buckets.uploads -> unprocessed-slides). Use that
+            // so frontend-initiated multipart uploads land in the raw uploads bucket.
+            .bucket(props.buckets.uploads)
             .key(key)
             .contentType(contentType)
             .build()
@@ -39,7 +42,7 @@ class UploadService(private val s3Client: S3Client, private val s3Presigner: S3P
 
     fun presignUploadPart(uploadId: String, key: String, partNumber: Int, expirySeconds: Long = 60 * 60): String {
         val uploadPartRequest = UploadPartRequest.builder()
-            .bucket(props.buckets.tiles)
+            .bucket(props.buckets.uploads)
             .key(key)
             .uploadId(uploadId)
             .partNumber(partNumber)
@@ -61,7 +64,7 @@ class UploadService(private val s3Client: S3Client, private val s3Presigner: S3P
         val completedMultipart = CompletedMultipartUpload.builder().parts(completedParts).build()
 
         val req = CompleteMultipartUploadRequest.builder()
-            .bucket(props.buckets.tiles)
+            .bucket(props.buckets.uploads)
             .key(key)
             .uploadId(uploadId)
             .multipartUpload(completedMultipart)
@@ -72,7 +75,7 @@ class UploadService(private val s3Client: S3Client, private val s3Presigner: S3P
 
     fun abortMultipartUpload(uploadId: String, key: String) {
         val req = AbortMultipartUploadRequest.builder()
-            .bucket(props.buckets.tiles)
+            .bucket(props.buckets.uploads)
             .key(key)
             .uploadId(uploadId)
             .build()
