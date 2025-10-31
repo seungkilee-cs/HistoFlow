@@ -11,6 +11,7 @@ data class MinioProperties(
     val buckets: Buckets = Buckets()
 ) {
     data class Buckets(
-        var tiles: String = "histoflow-tiles"
+        var tiles: String = "histoflow-tiles",
+        var uploads: String = "unprocessed-slides"
     )
 }

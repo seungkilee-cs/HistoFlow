@@ -26,6 +26,7 @@ minio:
   secret-key: minioadmin
   buckets:
     tiles: histoflow-tiles
+    uploads: unprocessed-slides
 
 # Logging Configuration
 logging:

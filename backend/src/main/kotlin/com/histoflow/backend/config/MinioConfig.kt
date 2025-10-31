@@ -13,7 +13,7 @@ import java.net.URI
 @Configuration
 class MinioConfig(private val props: MinioProperties) {
 
-    @ For creating pre signed url that frontend requests
+    @Bean
     fun s3Client(): S3Client {
         return S3Client.builder()
             .endpointOverride(URI.create(props.endpoint))
@@ -24,6 +24,19 @@ class MinioConfig(private val props: MinioProperties) {
                 )
             )
             .forcePathStyle(true) // Required for MinIO
+            .build()
+    }
+
+    @Bean
+    fun s3Presigner(): S3Presigner {
+        return S3Presigner.builder()
+            .endpointOverride(URI.create(props.endpoint))
+            .region(Region.US_EAST_1)
+            .credentialsProvider(
+                StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(props.accessKey, props.secretKey)
+                )
+            )
             .build()
     }
 

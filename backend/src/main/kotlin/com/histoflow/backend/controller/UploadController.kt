@@ -1,5 +1,6 @@
 package com.histoflow.backend.controller
 
+import com.histoflow.backend.config.MinioProperties
 import io.minio.GetPresignedObjectUrlArgs
 import io.minio.MinioClient
 import io.minio.MakeBucketArgs
@@ -30,21 +31,21 @@ data class InitiateUploadResponse(
 
 @RestController
 @RequestMapping("/api/v1/uploads")
-class UploadController(private val minioClient: MinioClient) { // Assuming MinioClient is configured as a Spring Bean
+class UploadController(private val minioClient: MinioClient, private val props: MinioProperties) { // MinioProperties injected for bucket names
 
     // This is the endpoint the frontend will call to get the pre-signed URL.
     @PostMapping("/initiate")
     fun initiateUpload(@RequestBody request: InitiateUploadRequest): ResponseEntity<InitiateUploadResponse> {
         try {
-            // Define the bucket where the raw file will be temporarily stored
-            val bucketName = "unprocessed-slides"
+            // Define the bucket where the raw file will be temporarily stored (from config)
+            val bucketName = props.buckets.uploads
 
             // best practice - create a unique ID for the object to avoid name collisions
             val imageId = UUID.randomUUID().toString()
             val objectName = "$imageId/${request.fileName}"
             val datasetName = request.datasetName?.takeIf { it.isNotBlank() } ?: request.fileName
 
-            // check if the bucket exists and create it if it doesn't. In prod, we prob want to do this upon start
+            // check if the bucket exists and create it if it doesn't. In prod, we probably want to create buckets on startup instead.
             val bucketExists = minioClient.bucketExists(
                 BucketExistsArgs.builder()
                     .bucket(bucketName)

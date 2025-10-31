@@ -48,7 +48,7 @@ async function initiateUploadOnServer(
   partSizeHint: number,
   signal?: AbortSignal
 ): Promise<InitiateResponse> {
-  const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/initiate`, {
+  const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/multipart/initiate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename: file.name, size: file.size, contentType: file.type, partSizeHint }),
@@ -71,7 +71,7 @@ async function getPresignedUrls(
   partNumbers: number[],
   signal?: AbortSignal
 ): Promise<Record<number, string>> {
-  const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/presign`, {
+  const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/multipart/presign`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ uploadId, key, partNumbers }),
@@ -125,7 +125,7 @@ async function completeUploadOnServer(
   parts: Array<{ partNumber: number; etag: string }>,
   signal?: AbortSignal
 ) {
-  const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/complete`, {
+  const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/multipart/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ uploadId, key, parts }),
