@@ -4,7 +4,10 @@ import io.minio.GetPresignedObjectUrlArgs
 import io.minio.MinioClient
 import io.minio.MakeBucketArgs
 import io.minio.BucketExistsArgs
+import com.histoflow.backend.config.MinioProperties
+import com.histoflow.backend.service.TilingTriggerService
 import io.minio.http.Method
+import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -28,16 +31,40 @@ data class InitiateUploadResponse(
     val datasetName: String
 )
 
+data class CompleteUploadRequest(
+    val objectName: String,
+    val imageId: String? = null,
+    val datasetName: String? = null
+)
+
+data class CompleteUploadResponse(
+    val status: String,
+    val imageId: String,
+    val message: String
+)
+
 @RestController
 @RequestMapping("/api/v1/uploads")
-class UploadController(private val minioClient: MinioClient) { // Assuming MinioClient is configured as a Spring Bean
+class UploadController(
+    private val minioClient: MinioClient,
+    private val tilingTriggerService: TilingTriggerService,
+    private val minioProperties: MinioProperties
+) {
+
+    private val logger = LoggerFactory.getLogger(javaClass)
 
     // This is the endpoint the frontend will call to get the pre-signed URL.
     @PostMapping("/initiate")
     fun initiateUpload(@RequestBody request: InitiateUploadRequest): ResponseEntity<InitiateUploadResponse> {
         try {
             // Define the bucket where the raw file will be temporarily stored
-            val bucketName = "unprocessed-slides"
+            val bucketName = minioProperties.buckets.raw
+            logger.info("InitiateUpload request: fileName='{}', contentType='{}', datasetName='{}', bucket='{}'",
+                request.fileName,
+                request.contentType,
+                request.datasetName,
+                bucketName
+            )
 
             // best practice - create a unique ID for the object to avoid name collisions
             val imageId = UUID.randomUUID().toString()
@@ -78,12 +105,70 @@ class UploadController(private val minioClient: MinioClient) { // Assuming Minio
                 imageId = imageId,
                 datasetName = datasetName
             )
+            logger.info(
+                "InitiateUpload response: imageId='{}', objectName='{}', datasetName='{}'",
+                response.imageId,
+                response.objectName,
+                response.datasetName
+            )
             return ResponseEntity.ok(response)
 
         } catch (e: Exception) {
             println("Error generating pre-signed URL: ${e.message}")
             e.printStackTrace()
             return ResponseEntity.internalServerError().build()
+        }
+    }
+
+    @PostMapping("/complete")
+    fun completeUpload(@RequestBody request: CompleteUploadRequest): ResponseEntity<CompleteUploadResponse> {
+        return try {
+            val resolvedImageId = request.imageId ?: request.objectName.substringBefore('/')
+
+            logger.info(
+                "CompleteUpload request: imageId='{}', objectName='{}', datasetName='{}'",
+                resolvedImageId,
+                request.objectName,
+                request.datasetName
+            )
+
+            tilingTriggerService.triggerTiling(
+                imageId = resolvedImageId,
+                sourceBucket = minioProperties.buckets.raw,
+                sourceObjectName = request.objectName,
+                datasetName = request.datasetName
+            )
+
+            val response = CompleteUploadResponse(
+                status = "accepted",
+                imageId = resolvedImageId,
+                message = "Tiling job initiated"
+            )
+            logger.info(
+                "CompleteUpload response: status='{}', imageId='{}', message='{}'",
+                response.status,
+                response.imageId,
+                response.message
+            )
+
+            ResponseEntity.ok(
+                response
+            )
+        } catch (e: Exception) {
+            logger.error(
+                "CompleteUpload failed: imageId='{}', objectName='{}', datasetName='{}'",
+                request.imageId,
+                request.objectName,
+                request.datasetName,
+                e
+            )
+            ResponseEntity.internalServerError().body(
+                CompleteUploadResponse(
+                    status = "error",
+                    imageId = request.imageId.orEmpty(),
+                    message = "Failed to initiate tiling: ${e.message}"
+                )
+            )
         }
     }
 }

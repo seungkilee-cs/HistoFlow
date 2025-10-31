@@ -7,6 +7,7 @@ import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectResponse
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 
@@ -35,6 +36,46 @@ class TileService(
         } catch (e: NoSuchKeyException) {
             logger.error("DZI descriptor not found: {}", objectKey)
             throw IllegalArgumentException("Image $imageId not found or tiles not generated")
+        }
+    }
+
+    fun getTilingStatus(imageId: String): TilingStatus {
+        val descriptorKey = "$imageId/image.dzi"
+        return try {
+            s3Client.headObject(
+                HeadObjectRequest.builder()
+                    .bucket(minioProps.buckets.tiles)
+                    .key(descriptorKey)
+                    .build()
+            )
+
+            TilingStatus(
+                imageId = imageId,
+                status = "completed",
+                message = "Tiles are ready"
+            )
+        } catch (_: NoSuchKeyException) {
+            val rawExists = s3Client.listObjectsV2(
+                ListObjectsV2Request.builder()
+                    .bucket(minioProps.buckets.raw)
+                    .prefix("$imageId/")
+                    .maxKeys(1)
+                    .build()
+            ).contents().isNotEmpty()
+
+            if (rawExists) {
+                TilingStatus(
+                    imageId = imageId,
+                    status = "processing",
+                    message = "Tiling in progress"
+                )
+            } else {
+                TilingStatus(
+                    imageId = imageId,
+                    status = "not_found",
+                    message = "Upload not found"
+                )
+            }
         }
     }
 
@@ -139,4 +180,10 @@ data class DatasetPage(
     val datasets: List<DatasetSummary>,
     val nextContinuationToken: String?,
     val appliedPrefix: String
+)
+
+data class TilingStatus(
+    val imageId: String,
+    val status: String,
+    val message: String? = null
 )

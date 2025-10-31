@@ -19,6 +19,18 @@ class TileController(private val tileService: TileService) {
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
+    @GetMapping("/{imageId}/status")
+    fun getTilingStatus(@PathVariable imageId: String): ResponseEntity<Any> {
+        val status = tileService.getTilingStatus(imageId)
+        val httpStatus = when (status.status) {
+            "completed" -> HttpStatus.OK
+            "processing" -> HttpStatus.ACCEPTED
+            "not_found" -> HttpStatus.NOT_FOUND
+            else -> HttpStatus.OK
+        }
+        return ResponseEntity.status(httpStatus).body(status)
+    }
+
     /**
      * Serve DZI descriptor XML
      * Frontend request: GET /api/v1/tiles/test-image-001/image.dzi
