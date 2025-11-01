@@ -1,5 +1,8 @@
 package com.histoflow.backend.service
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.histoflow.backend.config.MinioProperties
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -14,7 +17,8 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 @Service
 class TileService(
     private val s3Client: S3Client,
-    private val minioProps: MinioProperties
+    private val minioProps: MinioProperties,
+    private val objectMapper: ObjectMapper
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -101,22 +105,22 @@ class TileService(
     }
 
     fun listDatasets(limit: Int = 100, continuationToken: String? = null, prefix: String? = null): DatasetPage {
-        val aggregated = mutableMapOf<String, DatasetSummary>()
+        val sanitizedLimit = limit.coerceIn(1, 50)
+        val originalQuery = prefix?.trim()?.takeIf { it.isNotEmpty() }
+        val searchTerm = originalQuery?.lowercase()
+
+        val aggregated = mutableMapOf<String, DatasetAccumulator>()
 
         var token = continuationToken
         var nextToken: String? = null
 
-        while (aggregated.size < limit) {
+        while (true) {
             val requestBuilder = ListObjectsV2Request.builder()
                 .bucket(minioProps.buckets.tiles)
                 .maxKeys(1000)
 
             if (!token.isNullOrBlank()) {
                 requestBuilder.continuationToken(token)
-            }
-
-            if (!prefix.isNullOrBlank()) {
-                requestBuilder.prefix(prefix)
             }
 
             val response = s3Client.listObjectsV2(requestBuilder.build())
@@ -133,44 +137,102 @@ class TileService(
                     }
                 }
                 .forEach { (datasetId, obj) ->
-                    val summary = aggregated.getOrPut(datasetId) {
-                        DatasetSummary(
-                            imageId = datasetId,
-                            totalObjects = 0,
-                            totalSizeBytes = 0,
-                            lastModifiedMillis = 0
-                        )
-                    }
-
-                    aggregated[datasetId] = summary.copy(
-                        totalObjects = summary.totalObjects + 1,
-                        totalSizeBytes = summary.totalSizeBytes + obj.size(),
-                        lastModifiedMillis = maxOf(summary.lastModifiedMillis, obj.lastModified().toEpochMilli())
-                    )
+                    val accumulator = aggregated.getOrPut(datasetId) { DatasetAccumulator() }
+                    accumulator.totalObjects += 1
+                    accumulator.totalSizeBytes += obj.size()
+                    accumulator.lastModifiedMillis = maxOf(accumulator.lastModifiedMillis, obj.lastModified().toEpochMilli())
                 }
 
-            nextToken = response.nextContinuationToken()
-
-            if (nextToken.isNullOrBlank() || aggregated.size >= limit) {
-                break
-            } else {
-                token = nextToken
+            aggregated.forEach { (datasetId, accumulator) ->
+                if (!accumulator.metadataLoaded) {
+                    accumulator.datasetName = loadDatasetName(datasetId) ?: datasetId
+                    accumulator.metadataLoaded = true
+                }
+                accumulator.matchesQuery = matchesSearch(datasetId, accumulator.datasetName, searchTerm)
             }
+
+            val matchedCount = aggregated.count { it.value.matchesQuery }
+            val isTruncated = response.isTruncated
+            val candidateNext = response.nextContinuationToken()
+
+            val shouldContinue = when {
+                !isTruncated -> false
+                searchTerm == null -> aggregated.size < sanitizedLimit
+                else -> matchedCount < sanitizedLimit
+            }
+
+            if (!shouldContinue) {
+                nextToken = candidateNext
+                break
+            }
+
+            if (candidateNext.isNullOrBlank()) {
+                nextToken = null
+                break
+            }
+
+            token = candidateNext
         }
 
-        val sorted = aggregated.values
+        val summaries = aggregated
+            .filter { (_, accumulator) -> searchTerm == null || accumulator.matchesQuery }
+            .map { (imageId, accumulator) ->
+                DatasetSummary(
+                    imageId = imageId,
+                    datasetName = accumulator.datasetName ?: imageId,
+                    totalObjects = accumulator.totalObjects,
+                    totalSizeBytes = accumulator.totalSizeBytes,
+                    lastModifiedMillis = accumulator.lastModifiedMillis
+                )
+            }
             .sortedByDescending { it.lastModifiedMillis }
+            .take(sanitizedLimit)
 
         return DatasetPage(
-            datasets = sorted.take(limit),
+            datasets = summaries,
             nextContinuationToken = nextToken,
-            appliedPrefix = prefix.orEmpty()
+            appliedPrefix = originalQuery.orEmpty()
         )
+    }
+
+    private fun loadDatasetName(imageId: String): String? {
+        val metadataKey = "$imageId/metadata.json"
+        return try {
+            s3Client.getObject(
+                GetObjectRequest.builder()
+                    .bucket(minioProps.buckets.tiles)
+                    .key(metadataKey)
+                    .build()
+            ).use { input ->
+                val metadata = objectMapper.readValue(input, TileMetadata::class.java)
+                metadata.datasetName?.takeIf { it.isNotBlank() }
+            }
+        } catch (_: NoSuchKeyException) {
+            logger.debug("Metadata not found for imageId={}", imageId)
+            null
+        } catch (e: Exception) {
+            logger.warn("Failed to read metadata for imageId={}", imageId, e)
+            null
+        }
+    }
+
+    private fun matchesSearch(imageId: String, datasetName: String?, searchTerm: String?): Boolean {
+        if (searchTerm.isNullOrBlank()) {
+            return true
+        }
+
+        val lowerTerm = searchTerm.lowercase()
+        if (imageId.lowercase().contains(lowerTerm)) {
+            return true
+        }
+
+        return datasetName?.lowercase()?.contains(lowerTerm) == true
     }
 }
 
 data class DatasetSummary(
     val imageId: String,
+    val datasetName: String,
     val totalObjects: Long,
     val totalSizeBytes: Long,
     val lastModifiedMillis: Long
@@ -186,4 +248,19 @@ data class TilingStatus(
     val imageId: String,
     val status: String,
     val message: String? = null
+)
+
+private data class DatasetAccumulator(
+    var totalObjects: Long = 0,
+    var totalSizeBytes: Long = 0,
+    var lastModifiedMillis: Long = 0,
+    var datasetName: String? = null,
+    var metadataLoaded: Boolean = false,
+    var matchesQuery: Boolean = true
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+private data class TileMetadata(
+    @JsonProperty("dataset_name")
+    val datasetName: String?
 )

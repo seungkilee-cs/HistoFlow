@@ -54,7 +54,7 @@ class RestTemplateConfig {
         
         return RestTemplate(requestFactory).apply {
             messageConverters = listOf(jacksonConverter)
-            interceptors = listOf(loggingInterceptor())
+            interceptors = listOf(loggingInterceptor(objectMapper))
         }
     }
 
@@ -62,10 +62,10 @@ class RestTemplateConfig {
      * Interceptor to log raw HTTP requests and responses
      * Only logs when DEBUG level is enabled
      */
-    private fun loggingInterceptor() = ClientHttpRequestInterceptor { request, body, execution ->
+    private fun loggingInterceptor(objectMapper: ObjectMapper) = ClientHttpRequestInterceptor { request, body, execution ->
         logRequest(request, body)
         val response = execution.execute(request, body)
-        logResponse(response)
+        logResponse(response, objectMapper)
         response
     }
 
@@ -80,11 +80,31 @@ class RestTemplateConfig {
         }
     }
 
-    private fun logResponse(response: ClientHttpResponse) {
+    private fun logResponse(response: ClientHttpResponse, objectMapper: ObjectMapper) {
         if (logger.isDebugEnabled) {
             logger.debug("═══ Incoming HTTP Response ═══")
             logger.debug("Status: {}", response.statusCode)
             logger.debug("Headers: {}", response.headers)
+            try {
+                val raw = response.body?.readAllBytes()?.toString(StandardCharsets.UTF_8)
+                if (!raw.isNullOrBlank()) {
+                    val pretty = try {
+                        val json = objectMapper.readTree(raw)
+                        objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(json)
+                    } catch (_: Exception) {
+                        raw
+                    }
+                    logger.debug("Body: {}", pretty)
+
+                    val buffer = raw.toByteArray(StandardCharsets.UTF_8)
+                    response::class.java.getDeclaredField("body").apply {
+                        isAccessible = true
+                        set(response, buffer.inputStream())
+                    }
+                }
+            } catch (ex: Exception) {
+                logger.warn("Failed to log response body", ex)
+            }
             logger.debug("═══════════════════════════════")
         }
     }

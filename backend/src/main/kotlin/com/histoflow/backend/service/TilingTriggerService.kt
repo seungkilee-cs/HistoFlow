@@ -2,6 +2,7 @@ package com.histoflow.backend.service
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.JsonNode
 import com.histoflow.backend.config.TilingProperties
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
@@ -78,19 +79,19 @@ class TilingTriggerService(
         val requestEntity = HttpEntity(payload, headers)
 
         try {
-            val response: ResponseEntity<String> = restTemplate.postForEntity(
+            val response: ResponseEntity<JsonNode> = restTemplate.postForEntity(
                 url,
                 requestEntity,
-                String::class.java
+                JsonNode::class.java
             )
 
             if (response.statusCode.is2xxSuccessful) {
                 logger.info("✅ Tiling job triggered successfully: imageId={}, status={}", 
                     imageId, response.statusCode)
-                logger.debug("Response: {}", response.body)
+                logger.debug("Response: {}", response.body?.toPrettyString())
             } else {
                 logger.error("❌ Tiling service rejected request: status={}, body={}", 
-                    response.statusCode, response.body)
+                    response.statusCode, response.body?.toPrettyString())
                 throw IllegalStateException("Tiling service error: ${response.statusCode}")
             }
 

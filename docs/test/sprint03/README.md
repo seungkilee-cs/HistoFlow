@@ -74,6 +74,8 @@ curl http://localhost:8080/api/v1/tiles/<imageId>/image.dzi
 curl http://localhost:8080/api/v1/tiles/<imageId>/image_files/0/0_0.jpg --output /tmp/tile.jpg
 ```
 
+
+
 ## 4. Cleanup
 
 When finished:
