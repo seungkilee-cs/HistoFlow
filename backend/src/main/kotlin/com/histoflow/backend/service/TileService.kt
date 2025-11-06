@@ -61,7 +61,7 @@ class TileService(
         } catch (_: NoSuchKeyException) {
             val rawExists = s3Client.listObjectsV2(
                 ListObjectsV2Request.builder()
-                    .bucket(minioProps.buckets.raw)
+                    .bucket(minioProps.buckets.uploads)
                     .prefix("$imageId/")
                     .maxKeys(1)
                     .build()

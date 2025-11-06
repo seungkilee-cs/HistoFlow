@@ -28,49 +28,32 @@ class MinioConfig(private val props: MinioProperties) {
             .build()
     }
 
-    @Bean
-    fun s3Presigner(): S3Presigner {
-        return S3Presigner.builder()
-            // Use the public endpoint when generating presigned URLs so the returned
-            // URLs are reachable from the browser (host machine). The internal
-            // endpoint (props.endpoint) is for server-to-MinIO communication inside
-            // the Docker network and may produce hostnames not resolvable on the host.
-            .endpointOverride(URI.create(props.publicEndpoint))
-            .region(Region.US_EAST_1)
-            .credentialsProvider(
-                StaticCredentialsProvider.create(
-                    AwsBasicCredentials.create(props.accessKey, props.secretKey)
-                )
+@Bean
+fun s3Presigner(): S3Presigner {
+    return S3Presigner.builder()
+        // correctly use publicEndpoint so browser can reach the URLs
+        .endpointOverride(URI.create(props.publicEndpoint))
+        .region(Region.US_EAST_1)
+        .credentialsProvider(
+            StaticCredentialsProvider.create(
+                AwsBasicCredentials.create(props.accessKey, props.secretKey)
             )
-            // Ensure path-style addressing so presigned URLs target the MinIO host:port
-            // instead of generating virtual-host style URLs like <bucket>.minio which
-            // are not resolvable from the host network in our dev setup.
-            .serviceConfiguration(
-                S3Configuration.builder()
-                    .pathStyleAccessEnabled(true)
-                    .build()
-            )
-            .build()
-    }
+        )
+        // force path-style URLs (required for MinIO local dev)
+        .serviceConfiguration(
+            S3Configuration.builder()
+                .pathStyleAccessEnabled(true)
+                .build()
+        )
+        .build()
+}
+
 
     @Bean
     fun minioClient(): MinioClient {
         return MinioClient.builder()
             .endpoint(props.endpoint)
             .credentials(props.accessKey, props.secretKey)
-            .build()
-    }
-
-    @Bean
-    fun s3Presigner(): S3Presigner {
-        return S3Presigner.builder()
-            .endpointOverride(URI.create(props.endpoint))
-            .region(Region.US_EAST_1)
-            .credentialsProvider(
-                StaticCredentialsProvider.create(
-                    AwsBasicCredentials.create(props.accessKey, props.secretKey)
-                )
-            )
             .build()
     }
 }

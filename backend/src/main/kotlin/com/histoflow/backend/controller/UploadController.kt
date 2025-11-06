@@ -73,12 +73,7 @@ data class CompleteUploadResponse(
 
 /**
  * Controller handling file upload workflow
- * 
- * Implements the upload-first pattern:
- * 1. Frontend requests pre-signed URL (/initiate)
- * 2. Frontend uploads directly to MinIO
- * 3. Frontend notifies backend of completion (/complete)
- * 4. Backend triggers tiling microservice
+
  */
 @RestController
 @RequestMapping("/api/v1/uploads")
@@ -91,8 +86,8 @@ class UploadController(
 
     /**
      * Initiate upload by generating a pre-signed URL
-     * 
-     * This endpoint:
+    
+
      * - Generates a unique image ID
      * - Creates the bucket if it doesn't exist
      * - Returns a pre-signed URL valid for 15 minutes
@@ -106,7 +101,7 @@ class UploadController(
     ): ResponseEntity<InitiateUploadResponse> {
         return try {
             // Define the bucket where the raw file will be temporarily stored (from config)
-            val bucketName = props.buckets.uploads
+            val bucketName = minioProperties.buckets.uploads
             
             logger.info(
                 "InitiateUpload request: fileName='{}', contentType='{}', datasetName='{}', bucket='{}'",
@@ -191,16 +186,16 @@ class UploadController(
         )
 
         return try {
-            // ✅ Add null check for bucket configuration
-            val rawBucket = minioProperties.buckets.raw
-                ?: throw IllegalStateException("MinIO raw bucket not configured")
+            // Add null check for bucket configuration
+            val uploadBucket = minioProperties.buckets.uploads.takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("MinIO upload bucket not configured")
 
-            logger.debug("Using raw bucket: {}", rawBucket)
+            logger.debug("Using upload bucket: {}", uploadBucket)
 
             // Trigger tiling microservice
             tilingTriggerService.triggerTiling(
                 imageId = resolvedImageId,
-                sourceBucket = rawBucket,
+                sourceBucket = uploadBucket,
                 sourceObjectName = request.objectName,
                 datasetName = request.datasetName
             )
