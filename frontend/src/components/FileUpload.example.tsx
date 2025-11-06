@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import axios, { AxiosProgressEvent } from "axios";
 
 // defining the shape of the response from our backend's /initiate endpoint
@@ -18,6 +18,24 @@ const FileUpload: React.FC = () => {
   >("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [latestResponse, setLatestResponse] = useState<InitiateUploadResponse | null>(null);
+  const [tilingStatus, setTilingStatus] = useState<
+    "idle" | "processing" | "completed" | "failed"
+  >("idle");
+  const [tilingMessage, setTilingMessage] = useState<string>("");
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const clearPolling = () => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      clearPolling();
+    };
+  }, []);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -25,6 +43,9 @@ const FileUpload: React.FC = () => {
       setUploadStatus("idle");
       setUploadProgress(0);
       setErrorMessage("");
+      setTilingStatus("idle");
+      setTilingMessage("");
+      clearPolling();
     }
   };
 
@@ -37,6 +58,9 @@ const FileUpload: React.FC = () => {
     setUploadStatus("uploading");
     setUploadProgress(0);
     setErrorMessage("");
+    setTilingStatus("idle");
+    setTilingMessage("");
+    clearPolling();
 
     try {
       // first request backend for a pre-signed url
@@ -76,13 +100,55 @@ const FileUpload: React.FC = () => {
 
       // not explicitly part of the upload, but notify the backend that the upload is complete.
       // Backend can use this status update to trigger the tiling job.
-      await axios.post("/api/v1/uploads/complete", { objectName });
+      await axios.post("/api/v1/uploads/complete", {
+        objectName,
+        imageId,
+        datasetName: resolvedName,
+      });
 
       setUploadStatus("success");
+      setTilingStatus("processing");
+      setTilingMessage("Tiling job accepted. Polling status...");
+
+      clearPolling();
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const statusResponse = await axios.get(`/api/v1/tiles/${imageId}/status`);
+          const status = statusResponse.data?.status as string | undefined;
+          const message = statusResponse.data?.message as string | undefined;
+
+          if (!status) {
+            return;
+          }
+
+          if (status === "completed") {
+            setTilingStatus("completed");
+            setTilingMessage(message ?? "Tiles are ready.");
+            clearPolling();
+          } else if (status === "processing") {
+            setTilingStatus("processing");
+            setTilingMessage(message ?? "Tiling in progress...");
+          } else if (status === "not_found") {
+            setTilingStatus("failed");
+            setTilingMessage("Upload not found. Please retry.");
+            clearPolling();
+          } else {
+            setTilingMessage(message ?? `Status: ${status}`);
+          }
+        } catch (statusError) {
+          console.error("Error polling tiling status:", statusError);
+          setTilingStatus("failed");
+          setTilingMessage("Error polling tiling status. Check console for details.");
+          clearPolling();
+        }
+      }, 5000);
     } catch (error) {
       console.error("An error occurred during the upload process:", error);
       setUploadStatus("error");
       setErrorMessage("Upload failed. Please try again.");
+      setTilingStatus("failed");
+      setTilingMessage("Upload failed before tiling could start.");
+      clearPolling();
     }
   };
 
@@ -109,6 +175,12 @@ const FileUpload: React.FC = () => {
 
       {uploadStatus === "success" && <p>Upload successful!</p>}
       {uploadStatus === "error" && <p>{errorMessage}</p>}
+      {tilingStatus !== "idle" && (
+        <p>
+          Tiling status: {tilingStatus}
+          {tilingMessage ? ` – ${tilingMessage}` : ""}
+        </p>
+      )}
       {latestResponse && (
         <div>
           <p>Image ID: {latestResponse.imageId}</p>

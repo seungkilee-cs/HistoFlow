@@ -4,6 +4,7 @@ import '../styles/TileViewerPage.scss';
 
 type DatasetSummary = {
   imageId: string;
+  datasetName: string;
   totalObjects: number;
   totalSizeBytes: number;
   lastModifiedMillis: number;
@@ -19,6 +20,7 @@ const API_BASE_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8080'
 
 const TileViewerPage: React.FC = () => {
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
+  const [activeDatasetName, setActiveDatasetName] = useState<string | null>(null);
   const [viewerKey, setViewerKey] = useState(0);
   const [inputValue, setInputValue] = useState('');
   const [featuredDatasets, setFeaturedDatasets] = useState<DatasetSummary[]>([]);
@@ -43,10 +45,23 @@ const TileViewerPage: React.FC = () => {
     return `${sizeLabel} · ${dataset.totalObjects} files${date ? ` · ${date.toLocaleString()}` : ''}`;
   };
 
-  const applyDataset = (imageId: string) => {
+  const applyDataset = (dataset: DatasetSummary | null) => {
+    if (!dataset) return;
+    setActiveImageId(dataset.imageId);
+    setActiveDatasetName(dataset.datasetName);
+    setInputValue(dataset.datasetName || dataset.imageId);
+    setViewerKey(prev => prev + 1);
+    setShowSuggestions(false);
+    setSearchTerm('');
+    setSearchResults([]);
+    setErrorMessage(null);
+  };
+
+  const applyDatasetById = (imageId: string, fallbackLabel?: string) => {
     if (!imageId) return;
     setActiveImageId(imageId);
-    setInputValue(imageId);
+    setActiveDatasetName(fallbackLabel ?? null);
+    setInputValue(fallbackLabel ?? imageId);
     setViewerKey(prev => prev + 1);
     setShowSuggestions(false);
     setSearchTerm('');
@@ -71,7 +86,7 @@ const TileViewerPage: React.FC = () => {
         setFeaturedDatasets(data.datasets);
         if (!initialisedRef.current && data.datasets.length > 0) {
           initialisedRef.current = true;
-          applyDataset(data.datasets[0].imageId);
+          applyDataset(data.datasets[0]);
         }
       } catch (error) {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -139,10 +154,25 @@ const TileViewerPage: React.FC = () => {
   };
 
   const handleSubmit = () => {
-    applyDataset(inputValue.trim());
+    const trimmed = inputValue.trim();
+    if (!trimmed) return;
+
+    const allKnown = [...featuredDatasets, ...searchResults];
+    const matched = allKnown.find(dataset =>
+      dataset.imageId.toLowerCase() === trimmed.toLowerCase() ||
+      dataset.datasetName.toLowerCase() === trimmed.toLowerCase()
+    );
+
+    if (matched) {
+      applyDataset(matched);
+      return;
+    }
+
+    applyDatasetById(trimmed);
   };
 
   const visibleImageId = activeImageId ?? '';
+  const visibleDatasetName = activeDatasetName ?? inputValue ?? '';
 
   return (
     <div className="tile-viewer-page">
@@ -172,7 +202,7 @@ const TileViewerPage: React.FC = () => {
                   setShowSuggestions(false);
                 }
               }}
-              placeholder="Search or paste an image ID"
+              placeholder="Search by dataset name or image ID"
               autoComplete="off"
             />
             <button
@@ -192,10 +222,15 @@ const TileViewerPage: React.FC = () => {
                     type="button"
                     className="tile-viewer-page__suggestion"
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => applyDataset(dataset.imageId)}
+                    onClick={() => applyDataset(dataset)}
                   >
-                    <span className="tile-viewer-page__suggestion-title">{dataset.imageId}</span>
-                    <span className="tile-viewer-page__suggestion-meta">{formatDatasetMeta(dataset)}</span>
+                    <span className="tile-viewer-page__suggestion-title">
+                      {dataset.datasetName || dataset.imageId}
+                    </span>
+                    <span className="tile-viewer-page__suggestion-meta">
+                      {dataset.datasetName && dataset.datasetName !== dataset.imageId ? `${dataset.imageId} · ` : ''}
+                      {formatDatasetMeta(dataset)}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -212,7 +247,17 @@ const TileViewerPage: React.FC = () => {
           </div>
         </div>
         <p className="tile-viewer-page__hint">
-          Current dataset: <code>{visibleImageId || '—'}</code>
+          Current dataset:{' '}
+          {visibleImageId ? (
+            <span>
+              <code>{visibleDatasetName || visibleImageId}</code>
+              {visibleDatasetName && visibleDatasetName !== visibleImageId ? (
+                <span> (<code>{visibleImageId}</code>)</span>
+              ) : null}
+            </span>
+          ) : (
+            <code>—</code>
+          )}
         </p>
       </div>
 

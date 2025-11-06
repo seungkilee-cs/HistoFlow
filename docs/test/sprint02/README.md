@@ -27,35 +27,44 @@ docker compose \
   --profile dev down
 ```
 
-## 2. Manual Upload & Tiling Test (simulate-upload)
+## 2. Automated Upload & Tiling Flow (Sprint 03)
 
-1. Prepare an uploadable slide (e.g., `backend/scripts/CMU-1.tiff`).
-2. From repo root, run:
+With the synchronous trigger + polling workflow in place, prefer the Sprint 03 scripts:
+
+1. Prepare a slide file (e.g., `backend/scripts/CMU-1.tiff`).
+2. Run the upload simulation (handles initiate → upload → complete → status):
    ```bash
-   ./scripts/sprint2/simulate-upload.sh \
+   ./scripts/sprint03/simulate-upload.sh \
      --file backend/scripts/CMU-1.tiff \
      --content-type application/octet-stream
    ```
    Optional flags:
    - `--dataset-name my-dataset`
    - `--backend-url http://localhost:8080`
-3. The script outputs `imageId` and `objectName`. Keep these for verification.
-4. Confirm upload in MinIO bucket `unprocessed-slides/<imageId>/` via CLI or console.
-5. Trigger tiling (if not automated) using the returned values:
+   - `--poll-interval 5` (seconds between status checks)
+   - `--max-attempts 60`
+3. The script prints tiling status until completion. On success it exits `0` and shows the final message.
+4. For a full end-to-end verification (including fetching artifacts), run:
    ```bash
-   curl -X POST http://localhost:8000/jobs/tile-image \
-     -H "Content-Type: application/json" \
-     -d '{
-           "image_id": "<imageId>",
-           "source_bucket": "unprocessed-slides",
-           "source_object_name": "<objectName>"
-         }'
+   ./scripts/sprint03/e2e-upload-and-tile.sh \
+     --file backend/scripts/CMU-1.tiff \
+     --dataset-name my-dataset
    ```
-6. Verify tiles:
-   - DZI descriptor: `curl http://localhost:8080/api/v1/tiles/<imageId>/image.dzi`
-   - Sample tile: `curl http://localhost:8080/api/v1/tiles/<imageId>/image_files/0/0_0.jpg --output /tmp/tile.jpg`
+   This script wraps the simulation, then downloads the generated `image.dzi` and a sample tile to `tmp/e2e-artifacts/`.
 
-## 3. Cleanup
+## 3. Manual Verification (Optional)
 
-- Stop Compose stack (see above) and remove `/tmp/histoflow_tiling` if created.
+If you need to inspect MinIO or call the APIs yourself:
+
+1. Confirm the raw upload: bucket `unprocessed-slides/<imageId>/`.
+2. Check tiling output: bucket `histoflow-tiles/<imageId>/`.
+3. Download artifacts manually:
+   ```bash
+   curl http://localhost:8080/api/v1/tiles/<imageId>/image.dzi
+   curl http://localhost:8080/api/v1/tiles/<imageId>/image_files/0/0_0.jpg --output /tmp/tile.jpg
+   ```
+
+## 4. Cleanup
+
+- Stop Compose stack (see above) and remove `/tmp/histoflow_tiling` or `tmp/e2e-artifacts` if created.
 - Optionally delete MinIO buckets using the console or `mc`.
