@@ -53,6 +53,7 @@ class MultipartUploadController(
     private val minioProperties: MinioProperties
     ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+    private val uploadKeyPattern = Regex("""^uploads/([0-9a-fA-F-]{36})-(.+)$""")
 
     @PostMapping("/initiate")
     fun initiate(@RequestBody req: InitiateMultipartRequest): ResponseEntity<InitiateMultipartResponse> {
@@ -121,16 +122,27 @@ class MultipartUploadController(
         }
     }
 
-    // iamge id fallback
+    // image id fallback
     private fun extractImageId(key: String): String {
-        // key format: "uploads/{uuid}-{filename}" only return the UUID part
-        return key.substringAfter("uploads/").substringBefore("-")
+        val match = uploadKeyPattern.find(key)
+        if (match != null) {
+            return match.groupValues[1]
+        }
+
+        // fallback: strip prefix and any trailing filename separator
+        return key.substringAfterLast('/')
+            .substringBeforeLast('-', missingDelimiterValue = key)
     }
 
     // dataset name fallback
     private fun extractDatasetName(key: String): String {
-        // key format: "uploads/{uuid}-{filename}" only return the filename part
-        return key.substringAfter("uploads/").substringAfter("-")
+        val match = uploadKeyPattern.find(key)
+        if (match != null) {
+            return match.groupValues[2]
+        }
+
+        // fallback: strip prefix, leave filename as-is
+        return key.substringAfterLast('/')
     }
 
 }
