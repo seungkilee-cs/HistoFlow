@@ -2,6 +2,8 @@ package com.histoflow.backend.controller
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.histoflow.backend.service.UploadService
+import com.histoflow.backend.service.TilingTriggerService
+import com.histoflow.backend.config.MinioProperties
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -39,7 +41,11 @@ data class AbortRequest(val uploadId: String, val key: String)
 
 @RestController
 @RequestMapping("/api/v1/uploads/multipart")
-class MultipartUploadController(private val uploadService: UploadService) {
+class MultipartUploadController(
+    private val uploadService: UploadService,
+    private val tilingTriggerService: TilingTriggerService,
+    private val minioProperties: MinioProperties
+    ) {
 
     @PostMapping("/initiate")
     fun initiate(@RequestBody req: InitiateMultipartRequest): ResponseEntity<InitiateMultipartResponse> {
@@ -87,6 +93,13 @@ class MultipartUploadController(private val uploadService: UploadService) {
             ex.printStackTrace()
             ResponseEntity.internalServerError().build()
         }
+    }
+
+    // fallback in case the dataset name is not set
+    private fun extractImageId(key: String): String {
+        // key format: "uploads/{uuid}-{filename}" only return the UUID part
+        // may want to add timestamp?
+        return key.substringAfter("uploads/").substringBefore("-")
     }
 
 }
