@@ -87,7 +87,6 @@ class UploadController(
     private val tilingTriggerService: TilingTriggerService,
     private val minioProperties: MinioProperties
 ) {
-
     private val logger = LoggerFactory.getLogger(javaClass)
 
     /**
@@ -106,8 +105,8 @@ class UploadController(
         @RequestBody request: InitiateUploadRequest
     ): ResponseEntity<InitiateUploadResponse> {
         return try {
-            // Define the bucket where the raw file will be temporarily stored
-            val bucketName = minioProperties.buckets.raw
+            // Define the bucket where the raw file will be temporarily stored (from config)
+            val bucketName = props.buckets.uploads
             
             logger.info(
                 "InitiateUpload request: fileName='{}', contentType='{}', datasetName='{}', bucket='{}'",
@@ -116,13 +115,12 @@ class UploadController(
                 request.datasetName,
                 bucketName
             )
-
             // Generate unique ID for the object to avoid name collisions
             val imageId = UUID.randomUUID().toString()
             val objectName = "$imageId/${request.fileName}"
             val datasetName = request.datasetName?.takeIf { it.isNotBlank() } ?: request.fileName
 
-            // Ensure bucket exists (in production, do this at startup)
+            // Ensure bucket exists (in production, we do this at startup)
             ensureBucketExists(bucketName)
 
             // Generate pre-signed URL for PUT operation

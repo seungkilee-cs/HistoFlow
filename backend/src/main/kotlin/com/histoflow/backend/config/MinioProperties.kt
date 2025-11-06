@@ -12,6 +12,6 @@ data class MinioProperties(
 ) {
     data class Buckets(
         var tiles: String = "histoflow-tiles",
-        var raw: String = "unprocessed-slides"
+        var uploads: String = "unprocessed-slides"
     )
 }
