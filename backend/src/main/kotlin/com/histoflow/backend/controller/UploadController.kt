@@ -106,7 +106,7 @@ class UploadController(
     ): ResponseEntity<InitiateUploadResponse> {
         return try {
             // Define the bucket where the raw file will be temporarily stored (from config)
-            val bucketName = props.buckets.uploads
+            val bucketName = minioProperties.buckets.uploads
             
             logger.info(
                 "InitiateUpload request: fileName='{}', contentType='{}', datasetName='{}', bucket='{}'",
@@ -191,16 +191,16 @@ class UploadController(
         )
 
         return try {
-            // ✅ Add null check for bucket configuration
-            val rawBucket = minioProperties.buckets.raw
-                ?: throw IllegalStateException("MinIO raw bucket not configured")
+            // Add null check for bucket configuration
+            val uploadBucket = minioProperties.buckets.uploads
+                ?: throw IllegalStateException("MinIO upload bucket not configured")
 
-            logger.debug("Using raw bucket: {}", rawBucket)
+            logger.debug("Using upload bucket: {}", uploadBucket)
 
             // Trigger tiling microservice
             tilingTriggerService.triggerTiling(
                 imageId = resolvedImageId,
-                sourceBucket = rawBucket,
+                sourceBucket = uploadBucket,
                 sourceObjectName = request.objectName,
                 datasetName = request.datasetName
             )
