@@ -1,5 +1,6 @@
 package com.histoflow.backend.controller
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.histoflow.backend.service.UploadService
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 // Request/response DTOs for multipart API
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class InitiateMultipartRequest(
     val filename: String,
     val contentType: String? = null,
