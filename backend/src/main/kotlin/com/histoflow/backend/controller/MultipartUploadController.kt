@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import org.slf4j.LoggerFactory
 
 // Request/response DTOs for multipart API
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -34,7 +35,12 @@ data class PartUrl(val partNumber: Int, val url: String)
 data class PresignResponse(val urls: List<PartUrl>)
 
 data class CompleteRequestPart(val partNumber: Int, val etag: String)
-data class CompleteRequest(val uploadId: String, val key: String, val parts: List<CompleteRequestPart>)
+data class CompleteRequest(
+    val uploadId: String, 
+    val key: String, 
+    val parts: List<CompleteRequestPart>,
+    val datasetName: String? = null
+)
 
 data class AbortRequest(val uploadId: String, val key: String)
 
@@ -46,6 +52,7 @@ class MultipartUploadController(
     private val tilingTriggerService: TilingTriggerService,
     private val minioProperties: MinioProperties
     ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
 
     @PostMapping("/initiate")
     fun initiate(@RequestBody req: InitiateMultipartRequest): ResponseEntity<InitiateMultipartResponse> {
@@ -75,9 +82,28 @@ class MultipartUploadController(
     @PostMapping("/complete")
     fun complete(@RequestBody req: CompleteRequest): ResponseEntity<Any> {
         return try {
+            // complete multipart upload to minio
             val parts = req.parts.map { Pair(it.partNumber, it.etag) }
             uploadService.completeMultipartUpload(req.uploadId, req.key, parts)
+
+            // extract image id for the tiling call
+            val imageId = extractImageId(req.key)
+            val datasetName = extractDatasetName(req.key)
+            logger.info("Multipart upload complete: imageId={}, key={}", imageId, req.key)
+
+            // trigger tiling
+            tilingTriggerService.triggerTiling(
+                imageId = imageId,
+                sourceBucket = minioProperties.buckets.uploads,
+                sourceObjectName = req.key,
+                // ultimately want to pass this in from frontend or fall back on the file name, possibly add timestamp
+                datasetName = datasetName
+            )
+            
+            logger.info("Tiling job triggered for imageId={}", imageId)
+
             ResponseEntity.ok().build()
+
         } catch (ex: Exception) {
             ex.printStackTrace()
             ResponseEntity.internalServerError().build()
@@ -95,11 +121,16 @@ class MultipartUploadController(
         }
     }
 
-    // fallback in case the dataset name is not set
+    // iamge id fallback
     private fun extractImageId(key: String): String {
         // key format: "uploads/{uuid}-{filename}" only return the UUID part
-        // may want to add timestamp?
         return key.substringAfter("uploads/").substringBefore("-")
+    }
+
+    // dataset name fallback
+    private fun extractDatasetName(key: String): String {
+        // key format: "uploads/{uuid}-{filename}" only return the filename part
+        return key.substringAfter("uploads/").substringAfter("-")
     }
 
 }
