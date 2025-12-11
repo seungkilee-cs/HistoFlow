@@ -1,13 +1,13 @@
-# **ADR-004: Upload Completion Notification and Automatic Tiling Trigger**
+# ADR-004: Upload Completion Notification and Automatic Tiling Trigger
 
-**Status:** Proposed  
-**Date:** 2025-10-29
+Status: Proposed  
+Date: 2025-10-29
 
-## **Abstract**
+## Abstract
 
 This ADR defines the mechanism for notifying the backend when a frontend upload completes and automatically triggering the tiling microservice. It builds on ADR-003's upload-first pattern by closing the loop: once the user uploads a file to MinIO via presigned URL, the frontend signals completion to the backend, which then initiates the tiling job and eventually notifies the frontend of processing status.
 
-## **Context**
+## Context
 
 Currently, the frontend uploads files directly to MinIO using presigned URLs obtained from `/api/v1/uploads/initiate`. After the upload completes, the frontend calls `POST /api/v1/uploads/complete` with `{ objectName }` @frontend/src/components/FileUpload.example.tsx#77-79. However, this endpoint does not exist in the backend @backend/src/main/kotlin/com/histoflow/backend/controller/UploadController.kt, so the notification fails silently.
 
@@ -16,9 +16,9 @@ We need to:
 2. Automatically trigger the tiling microservice when an upload completes.
 3. Provide a mechanism for the frontend to learn when tiling finishes (polling, webhooks, or WebSocket).
 
-## **Current State Analysis**
+## Current State Analysis
 
-### **Frontend Upload Flow**
+### Frontend Upload Flow
 The `FileUpload.example.tsx` component:
 1. Requests a presigned URL from `POST /api/v1/uploads/initiate` with `{ fileName, contentType, datasetName? }`.
 2. Receives `{ uploadUrl, objectName, imageId, datasetName }`.
@@ -26,13 +26,13 @@ The `FileUpload.example.tsx` component:
 4. Calls `POST /api/v1/uploads/complete` with `{ objectName }` to notify the backend.
 5. Sets `uploadStatus` to `"success"` and displays the `imageId`, `objectName`, and `datasetName`.
 
-### **Backend Upload Controller**
+### Backend Upload Controller
 The `UploadController` currently only implements:
 - `POST /api/v1/uploads/initiate` — generates presigned URLs and returns metadata.
 
-**Missing:** The `/uploads/complete` endpoint that the frontend expects.
+Missing: The `/uploads/complete` endpoint that the frontend expects.
 
-### **Tiling Service**
+### Tiling Service
 The tiling microservice exposes `POST /jobs/tile-image` accepting:
 ```json
 {
@@ -44,15 +44,15 @@ The tiling microservice exposes `POST /jobs/tile-image` accepting:
 ```
 It processes the job asynchronously and logs detailed timing/metadata.
 
-## **Decision**
+## Decision
 
-We will implement a **synchronous trigger with asynchronous processing** pattern:
+We will implement a synchronous trigger with asynchronous processing pattern:
 
-1. **Backend receives completion signal:** Implement `POST /api/v1/uploads/complete` in `UploadController`.
-2. **Backend triggers tiling immediately:** Upon receiving the completion signal, the backend synchronously calls the tiling service's `POST /jobs/tile-image` endpoint.
-3. **Frontend polls for status:** The frontend periodically polls a new `GET /api/v1/tiles/{imageId}/status` endpoint to check tiling progress.
+1. Backend receives completion signal: Implement `POST /api/v1/uploads/complete` in `UploadController`.
+2. Backend triggers tiling immediately: Upon receiving the completion signal, the backend synchronously calls the tiling service's `POST /jobs/tile-image` endpoint.
+3. Frontend polls for status: The frontend periodically polls a new `GET /api/v1/tiles/{imageId}/status` endpoint to check tiling progress.
 
-### **Detailed Workflow**
+### Detailed Workflow
 
 ```
 ┌──────────────┐
@@ -112,9 +112,9 @@ We will implement a **synchronous trigger with asynchronous processing** pattern
               └─────────────┘
 ```
 
-## **Implementation Requirements**
+## Implementation Requirements
 
-### **1. Backend: Upload Completion Endpoint**
+### 1. Backend: Upload Completion Endpoint
 
 Create `POST /api/v1/uploads/complete` in `UploadController`:
 
@@ -173,11 +173,11 @@ fun completeUpload(@RequestBody request: CompleteUploadRequest): ResponseEntity<
 }
 ```
 
-**Dependencies:**
+Dependencies:
 - Inject `RestTemplate` or use Spring's `WebClient` for HTTP calls to the tiling service.
 - Configure `TILING_SERVICE_URL` environment variable (default: `http://tiling:8000` in Docker).
 
-### **2. Backend: Status Polling Endpoint**
+### 2. Backend: Status Polling Endpoint
 
 Create `GET /api/v1/tiles/{imageId}/status`:
 
@@ -219,9 +219,9 @@ fun getTilingStatus(@PathVariable imageId: String): ResponseEntity<TilingStatusR
 }
 ```
 
-**Note:** This is a simple implementation that checks for tile existence. For production, consider storing job status in a database or using the tiling service's metadata.json.
+Note: This is a simple implementation that checks for tile existence. For production, consider storing job status in a database or using the tiling service's metadata.json.
 
-### **3. Frontend: Update Upload Component**
+### 3. Frontend: Update Upload Component
 
 Modify `FileUpload.example.tsx` to:
 1. Pass `imageId` and `datasetName` to `/uploads/complete`.
@@ -256,73 +256,73 @@ const pollInterval = setInterval(async () => {
 }, 5000); // Poll every 5 seconds
 ```
 
-## **Alternative Strategies**
+## Alternative Strategies
 
-### **Option A: Webhook Callback (Push-based)**
+### Option A: Webhook Callback (Push-based)
 The tiling service calls a backend webhook when processing completes. The backend then notifies the frontend via WebSocket or stores the status for polling.
 
-**Pros:**
+Pros:
 - Immediate notification, no polling overhead.
 - Scalable for many concurrent jobs.
 
-**Cons:**
+Cons:
 - Requires WebSocket infrastructure or long-polling.
 - More complex to implement and test.
 
-### **Option B: Message Queue (Event-driven)**
+### Option B: Message Queue (Event-driven)
 Use a message broker (RabbitMQ, Kafka) to decouple upload completion from tiling trigger. The backend publishes an "upload complete" event, and the tiling service subscribes to it.
 
-**Pros:**
+Pros:
 - Highly decoupled and scalable.
 - Natural fit for microservices architecture.
 
-**Cons:**
+Cons:
 - Adds infrastructure complexity (message broker).
 - Overkill for current scale.
 
-### **Option C: MinIO Event Notifications**
+### Option C: MinIO Event Notifications
 Configure MinIO to send S3 event notifications (e.g., `s3:ObjectCreated:Put`) to a webhook or queue when objects are uploaded to `unprocessed-slides`.
 
-**Pros:**
+Pros:
 - No frontend involvement in triggering tiling.
 - Fully automated and decoupled.
 
-**Cons:**
+Cons:
 - Requires MinIO event configuration.
 - Harder to pass custom metadata (datasetName) through events.
 
-## **Chosen Strategy: Synchronous Trigger + Polling**
+## Chosen Strategy: Synchronous Trigger + Polling
 
-We chose **synchronous trigger with polling** because:
-1. **Simplicity:** No additional infrastructure (message queues, WebSockets).
-2. **Immediate feedback:** The backend confirms tiling job acceptance instantly.
-3. **Sufficient for current scale:** Polling every 5 seconds is acceptable for a small number of concurrent users.
-4. **Easy to upgrade:** Can migrate to webhooks/WebSockets later without changing the upload flow.
+We chose synchronous trigger with polling because:
+1. Simplicity: No additional infrastructure (message queues, WebSockets).
+2. Immediate feedback: The backend confirms tiling job acceptance instantly.
+3. Sufficient for current scale: Polling every 5 seconds is acceptable for a small number of concurrent users.
+4. Easy to upgrade: Can migrate to webhooks/WebSockets later without changing the upload flow.
 
-## **Consequences**
+## Consequences
 
-### **Positive**
-- **Complete workflow:** Frontend → Backend → Tiling → Frontend status update.
-- **User visibility:** Users see when tiling starts and completes.
-- **Resilient:** If tiling fails, the backend can retry or log errors.
-- **Simple to implement:** Minimal changes to existing codebase.
+### Positive
+- Complete workflow: Frontend → Backend → Tiling → Frontend status update.
+- User visibility: Users see when tiling starts and completes.
+- Resilient: If tiling fails, the backend can retry or log errors.
+- Simple to implement: Minimal changes to existing codebase.
 
-### **Negative**
-- **Polling overhead:** Frontend makes periodic requests even when tiling is slow.
-- **Backend dependency:** Tiling service must be reachable from backend (Docker network or service discovery).
-- **No real-time updates:** 5-second polling delay before frontend sees completion.
+### Negative
+- Polling overhead: Frontend makes periodic requests even when tiling is slow.
+- Backend dependency: Tiling service must be reachable from backend (Docker network or service discovery).
+- No real-time updates: 5-second polling delay before frontend sees completion.
 
-### **Future Improvements**
+### Future Improvements
 1. Replace polling with WebSocket for real-time updates.
 2. Store tiling job status in a database for better tracking.
 3. Add retry logic if tiling service is unavailable.
 4. Implement MinIO event notifications for fully automated triggering.
 
-## **Related ADRs**
-- **ADR-003:** Upload-First Pattern (defines the presigned URL workflow).
-- **ADR-001:** Tiling Microservice (defines the tiling service API).
+## Related ADRs
+- ADR-003: Upload-First Pattern (defines the presigned URL workflow).
+- ADR-001: Tiling Microservice (defines the tiling service API).
 
-## **References**
+## References
 - Frontend upload component: `frontend/src/components/FileUpload.example.tsx`
 - Backend upload controller: `backend/src/main/kotlin/com/histoflow/backend/controller/UploadController.kt`
 - Tiling service API: `services/tiling/src/main.py`
