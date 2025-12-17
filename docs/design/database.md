@@ -9,17 +9,21 @@
 ## Core Entities
 
 - Slides
-    - slide_id (pk)
-    - url (unique)
-    - dzi_url (unique)
-    - dataset_name
-    - created_at
-    - updated_at
-    - is_active
+
+  - slide_id (pk)
+  - url (unique)
+  - dzi_url (unique)
+  - dataset_name
+  - created_at
+  - updated_at
+  - is_active
 
 - Analysis
-    - analysis_id (pk)
-    - slide_id (fk)
-    - created_at
-    - updated_at
-    - is_active
+  - analysis_id (pk)
+  - slide_id (fk)
+  - percentage
+  - type_enum
+  - created_at
+  - updated_at
+  - is_active
+
