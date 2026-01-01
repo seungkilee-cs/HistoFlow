@@ -57,7 +57,7 @@ COPY --from=builder-cuda /usr/local/lib/python3.10 /usr/local/lib/python3.10
 COPY --from=builder-cuda /usr/local/bin /usr/local/bin
 
 # ========================================
-# Final Application Image
+# Final Application Image (CUDA)
 # ========================================
 FROM runtime-cuda AS pathology-classifier
 
@@ -87,3 +87,59 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Default command
 CMD ["python", "train_classifier.py"]
 
+# ========================================
+# CPU-friendly builder and final image for multi-arch (incl. Apple Silicon)
+# ========================================
+FROM python:3.12-slim AS builder-cpu
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+FROM python:3.12-slim AS pathology-classifier-cpu
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/.local/bin:$PATH"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user and workspace
+RUN useradd --create-home --shell /bin/bash appuser && \
+    mkdir -p /app/data/pcam /app/models /app/src && \
+    chown -R appuser:appuser /app
+
+USER appuser
+WORKDIR /app
+
+# Copy installed site-packages from builder
+USER root
+RUN python -c "import sys; print(sys.version)"
+COPY --from=builder-cpu /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=builder-cpu /usr/local/bin /usr/local/bin
+
+# Copy application code
+USER appuser
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser *.py ./
+COPY --chown=appuser:appuser requirements.txt ./
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import torch; print('OK')" || exit 1
+
+CMD ["python", "train_classifier.py"]

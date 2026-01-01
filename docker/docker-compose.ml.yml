@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  sk-regression:
+    build:
+      context: ../services/sk-regression
+      dockerfile: Dockerfile
+      target: pathology-classifier-cpu
+    container_name: sk-regression
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ../services/sk-regression/data:/app/data
+      - ../services/sk-regression/models:/app/models
+      - ../services/sk-regression/logs:/app/logs
+    depends_on:
+      - minio
+    # Keep container alive; run predict via `docker compose exec sk-regression ...`
+    command: tail -f /dev/null
+    profiles: ["cpu", "dev"]
