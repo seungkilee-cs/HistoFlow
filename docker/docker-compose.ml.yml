@@ -7,9 +7,11 @@ services:
       dockerfile: Dockerfile
       target: pathology-classifier-cpu
     container_name: sk-regression
+    shm_size: "1g"
     environment:
       - PYTHONPATH=/app
     volumes:
+      - ../services/sk-regression:/app
       - ../services/sk-regression/data:/app/data
       - ../services/sk-regression/models:/app/models
       - ../services/sk-regression/logs:/app/logs

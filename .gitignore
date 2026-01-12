@@ -52,3 +52,7 @@ docs/devlog/*
 # dev
 archive/
 archive/*
+
+# Services Data
+#**/data/*
+services/*/data/*

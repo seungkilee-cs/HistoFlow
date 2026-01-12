@@ -47,15 +47,7 @@ class SlideRegressor:
 
     def _default_transforms(self) -> T.Compose:
         weights = ResNet18_Weights.DEFAULT
-        mean, std = weights.meta["mean"], weights.meta["std"]
-        return T.Compose(
-            [
-                T.Resize(256),
-                T.CenterCrop(224),
-                T.ToTensor(),
-                T.Normalize(mean=mean, std=std),
-            ]
-        )
+        return weights.transforms()
 
     def load_head(self, model_path: str) -> None:
         self.regressor = joblib.load(model_path)

@@ -16,202 +16,88 @@ It is designed to be modular: IO adapters, preprocessing, feature backbones, and
 ```
 services/sk-regression/
   ├─ src/
-  │   ├─ minio_io.py          # MinIO URI parsing/download
-  │   ├─ regression_model.py  # ResNet18 features + sklearn regressor
-  │   └─ pipeline.py          # Inference orchestration
-  ├─ predict.py               # CLI wrapper
-  ├─ train_classifier.py      # Example training script (optional)
+  │   ├─ __init__.py
+  │   ├─ main.py                # Core prediction logic for the CLI
+  │   ├─ train.py               # Core training logic for the CLI
+  │   ├─ minio_io.py            # MinIO URI parsing/download
+  │   ├─ pipeline.py            # Inference orchestration
+  │   ├─ regression_model.py    # Core ResNet18 feature extractor
+  │   └─ pathology_classifier.py # Training orchestration and data loading
+  ├─ predict.py                 # CLI entry point for prediction
+  ├─ train_classifier.py        # CLI entry point for training
   ├─ requirements.txt
   ├─ Dockerfile
-  └─ docker-compose.yml       # Standalone dev (optional)
+  └─ docker-compose.yml         # Standalone dev (optional)
 ```
 
-## Quick Start (choose one)
-- Best performance on Apple Silicon (M1/M2): run in a macOS Python venv (can use PyTorch MPS in the future; for now runs CPU unless extended to check for MPS).
-- Integrated Docker in master stack (CPU-only, portable): use `docker/docker-compose.base.yml` + `docker/docker-compose.ml.yml` and run predictions with `docker compose exec`.
-- Standalone Docker (service-local): use this folder's docker-compose for quick experiments.
+## Usage (Integrated Docker Stack)
 
-Important MinIO endpoint note:
-- Inside Docker compose network, use `minio:9000` (service DNS).
-- From host/venv, use `localhost:9000`.
+This service is designed to be run as part of the project's main Docker Compose stack, located in the repository's `/docker` directory.
 
-## Option A: Integrated with master Docker stack (recommended for portability)
-Prerequisites
-- MinIO and backend stack from `docker/` directory
-- A trained model file at `services/sk-regression/models/slide_regressor.pkl` (or similar)
-- Your image already uploaded to MinIO (e.g., `s3://unprocessed-slides/uploads/your-image.png`)
+### Step 1: Start the Services
 
-Start the stack (CPU-only ML)
-```
-# From repo root
-# Base + ML compose; bring up CPU profile
+Make sure Docker Desktop is running. From the repository root, start all services:
+
+```bash
+# This brings up the base services (Postgres, MinIO) and the ML services.
 docker compose \
   -f docker/docker-compose.base.yml \
   -f docker/docker-compose.ml.yml \
   --profile cpu up -d --build
 ```
+*Note: The MinIO console will be available at [http://localhost:9001](http://localhost:9001) (default credentials: `minioadmin`/`minioadmin`).*
 
-Run a prediction (inside container)
-```
-# Use internal endpoint minio:9000
-docker compose \
-  -f docker/docker-compose.base.yml \
-  -f docker/docker-compose.ml.yml \
-  exec sk-regression \
-  python predict.py \
-    --model models/slide_regressor.pkl \
-    --images s3://unprocessed-slides/uploads/your-image.png \
-    --minio-endpoint minio:9000 \
-    --minio-access-key $MINIO_ROOT_USER \
-    --minio-secret-key $MINIO_ROOT_PASSWORD \
-    --threshold 0.5 \
-    --save-jsonl outputs/results.jsonl
-```
+### Step 2: Train a New Model
 
-Volumes
-- `services/sk-regression/models` → `/app/models`
-- `services/sk-regression/data` → `/app/data`
-- `services/sk-regression/logs` → `/app/logs`
+To get meaningful predictions, you must first train the classification head using a dataset. The script is configured to use the [Patch Camelyon (PCam) dataset](https://www.kaggle.com/c/histopathologic-cancer-detection/data).
 
-## Option B: macOS host venv (Apple Silicon)
-This gives best local performance. You can later enhance device selection to use MPS (Metal) if desired.
+1.  **Download the Dataset**: Download the PCam HDF5 (`.h5`) files from Kaggle or another source.
 
-1) Create/activate venv
-```
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-```
+2.  **Place the Dataset**: Create the directory `services/sk-regression/data/pcam/` and place the HDF5 files inside, ensuring they have these exact names:
+    *   `camelyonpatch_level_2_split_train_x.h5`
+    *   `camelyonpatch_level_2_split_train_y.h5`
+    *   `camelyonpatch_level_2_split_test_x.h5`
+    *   `camelyonpatch_level_2_split_test_y.h5`
 
-2) Install dependencies
-```
-pip install -r requirements.txt
-```
+3.  **Run Training**: Execute the training script inside the running container. This will process the dataset and save a new `pathology_lr_resnet18.pkl` file to the `services/sk-regression/models/` directory.
 
-3) Predict on local files
-```
-python predict.py \
-  --model models/slide_regressor.pkl \
-  --images data/sample1.jpg data/sample2.jpg \
-  --threshold 0.5 \
-  --save-jsonl outputs/results.jsonl
-```
+    ```bash
+    # Note: Training can take a very long time depending on the dataset size.
+    docker compose \
+      -f docker/docker-compose.base.yml \
+      -f docker/docker-compose.ml.yml \
+      exec sk-regression python train_classifier.py
+    ```
+    *__Important Note on Training:__ Training uses PyTorch's `DataLoader`, which requires a significant amount of shared memory (`shm`). The project is pre-configured in `docker/docker-compose.ml.yml` with `shm_size: '1g'` for the `sk-regression` service to prevent crashes during training.*
 
-4) Predict from MinIO
-```
-python predict.py \
-  --model models/slide_regressor.pkl \
-  --images s3://unprocessed-slides/uploads/your-image.png \
-  --minio-endpoint localhost:9000 \
-  --minio-access-key minioadmin \
-  --minio-secret-key minioadmin \
-  --threshold 0.5
-```
+### Step 3: Run a Prediction
 
-## Option C: Standalone Docker (service-local)
-Build and start (GPU or CPU profile per this service's compose)
-```
-# From repo root or this folder
-# GPU container (if you have NVIDIA on Linux):
-docker compose -f services/sk-regression/docker-compose.yml up -d pathology-classifier
+Once you have a trained model, you can run predictions on new images.
 
-# CPU-only container
-docker compose -f services/sk-regression/docker-compose.yml --profile cpu up -d pathology-classifier-cpu
-```
+1.  **Upload an Image**: Upload an image you want to test (e.g., `my_image.jpg`) to a bucket in MinIO, for example, the `unprocessed-slides` bucket.
 
-Exec prediction (GPU example)
-```
-docker exec -it pathology-classifier \
-  python predict.py \
-    --model models/slide_regressor.pkl \
-    --images s3://unprocessed-slides/uploads/your-image.png \
-    --minio-endpoint localhost:9000 \
-    --minio-access-key minioadmin \
-    --minio-secret-key minioadmin \
-    --threshold 0.5
-```
+2.  **Run Prediction Command**: Use the `exec -T` command to run `predict.py`. The `-T` flag disables the pseudo-tty and prevents terminal crashes.
 
-## Running Predictions (CLI contract)
-Local files
-```
-python predict.py \
-  --model models/slide_regressor.pkl \
-  --images data/sample1.png data/sample2.jpg \
-  --threshold 0.5 \
-  --save-jsonl outputs/results.jsonl
-```
+    ```bash
+    # Replace the --images URI with your file's URI.
+    docker compose \
+      -f docker/docker-compose.base.yml \
+      -f docker/docker-compose.ml.yml \
+      exec -T sk-regression \
+      python predict.py \
+        --model models/pathology_lr_resnet18.pkl \
+        --images s3://unprocessed-slides/my_image.jpg \
+        --minio-endpoint minio:9000 \
+        --minio-access-key minioadmin \
+        --minio-secret-key minioadmin
+    ```
 
-MinIO URIs
-```
-python predict.py \
-  --model models/slide_regressor.pkl \
-  --images s3://unprocessed-slides/uploads/uuid-1-slide.png \
-           s3://unprocessed-slides/uploads/uuid-2-slide.png \
-  --minio-endpoint <endpoint> \
-  --minio-access-key <key> \
-  --minio-secret-key <secret> \
-  --threshold 0.5
-```
-
-Example output (per image)
-```
-{
-  "image": "s3://unprocessed-slides/uploads/uuid-123-slide.png",
-  "image_id": "uuid-123-slide",
-  "model": { "name": "slide_regressor", "feature_backbone": "resnet18", "version": "slide_regressor" },
-  "regression": { "score": 0.83, "raw_score": 1.47 },
-  "classification": { "label": "Tumor", "probabilities": {"Normal": 0.17, "Tumor": 0.83}, "threshold": 0.5 },
-  "preprocessing": { "resize": 224, "normalization": "imagenet" },
-  "runtime": { "device": "cpu|cuda", "inference_ms": 9.7 }
-}
-```
-
-## Full Testing Steps
-0) Verify MinIO object and credentials
-- Console: http://localhost:9001 (default admin/minioadmin)
-- Example URI: `s3://unprocessed-slides/uploads/your-image.png`
-
-1) Prepare a model
-- Place `slide_regressor.pkl` under `services/sk-regression/models/`.
-
-2) Test locally (venv)
-```
-python predict.py --model models/slide_regressor.pkl --images data/sample.jpg
-```
-
-3) Test integrated Docker (CPU)
-```
-# Bring up base + ML
-docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ml.yml --profile cpu up -d --build
-
-# Run prediction via exec (internal endpoint minio:9000)
-docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.ml.yml exec sk-regression \
-  python predict.py \
-    --model models/slide_regressor.pkl \
-    --images s3://unprocessed-slides/uploads/your-image.png \
-    --minio-endpoint minio:9000 \
-    --minio-access-key $MINIO_ROOT_USER \
-    --minio-secret-key $MINIO_ROOT_PASSWORD \
-    --threshold 0.5
-```
-
-4) Test JSONL export
-```
-python predict.py --model models/slide_regressor.pkl \
-  --images data/sample1.jpg data/sample2.jpg \
-  --save-jsonl outputs/results.jsonl
-cat outputs/results.jsonl
-```
-
-5) Device selection
-- Current pipeline: uses CUDA if available, otherwise CPU.
-- Future enhancement: add MPS (Apple Metal) detection when running on macOS host venv.
-- Force CPU: `CUDA_VISIBLE_DEVICES=""`.
-
-## Reset / Cleanup
-- Temporary downloads live under system temp (prefix `skreg_`) and are cleaned up best-effort.
-- Clear outputs: `rm -rf outputs/`
-- Clear venv: `deactivate && rm -rf .venv/`
-- Pip cache: `pip cache purge`
+### Volumes
+The service is configured with the following volume mounts to sync your local files with the container:
+- `services/sk-regression:/app` (Source code)
+- `services/sk-regression/data:/app/data` (Training data)
+- `services/sk-regression/models:/app/models` (Trained models)
+- `services/sk-regression/logs:/app/logs` (Log files)
 
 ## Extending / Swapping Components
 - IO: extend `src/minio_io.py` for new schemes or streaming.
@@ -220,17 +106,7 @@ cat outputs/results.jsonl
 - Head: replace sklearn regressor with a classifier; keep output contract.
 - Aggregation: add patch extraction + aggregation in `src/pipeline.py` for WSIs.
 
-## Later: Making this a shared ML foundation
-- ML base images (CPU and CUDA):
-  - Build `ml-base-cpu` (multi-arch linux/arm64+amd64) with shared deps (torch/torchvision CPU, numpy, pillow, opencv-python-headless, joblib, minio, optional FastAPI).
-  - Build `ml-base-cuda` (linux/amd64) with CUDA-enabled torch.
-  - Make service Dockerfiles accept `ARG BASE_IMAGE` and default to `ml-base-cpu`.
-- Compose profiles: `cpu` and `gpu` to switch runtime and resource reservations; `dev` for developer ports/tools.
-- Multi-arch: use `docker buildx build --platform linux/amd64,linux/arm64`.
-- Optional REST: expose FastAPI `/predict` for orchestration by backend instead of `docker exec` CLI.
-- TensorFlow services: either add TF to a specialized base image or create `ml-base-tf-*` to keep other services lean.
-
 ## Notes on Apple Silicon (M1/M2)
 - Docker on macOS does not expose Metal (MPS) to containers; expect CPU inside Docker.
-- For best local performance, use the macOS venv path and (later) enable MPS in the code path.
-- In the integrated stack, use CPU profile locally on M1 and GPU profile on Linux GPU nodes in CI/production.
+- For best local performance, use a local Python venv and enable MPS in the code path (currently not implemented).
+- In the integrated stack, use the `cpu` profile locally on M1/M2 machines.
