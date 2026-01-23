@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  pathology-classifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: pathology-classifier
+    container_name: pathology-classifier
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./logs:/app/logs
+    ports:
+      - "8888:8888" # Jupyter (optional)
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONPATH=/app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
+    command: tail -f /dev/null # Keep container running for interactive use
+
+  pathology-classifier-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime-cpu # Use CPU-only version
+    container_name: pathology-classifier-cpu
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    stdin_open: true
+    tty: true
+    profiles:
+      - cpu
