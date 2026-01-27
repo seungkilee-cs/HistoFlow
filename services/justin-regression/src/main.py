@@ -12,12 +12,8 @@ from .dinov2_embedder import DinoV2Embedder
 def predict_on_images(model_path: str, image_paths: list[str], *, minio_cfg: Optional[MinioConfig] = None, threshold: float = 0.5, save_jsonl: Optional[str] = None) -> list[dict]:
     
     # Load the trained classifier
-    print(f"Loading model from: {model_path}")
     clf = joblib.load(model_path)
-    print("Model loaded successfully")
     
-    print(image_paths)
-
     results: List[dict] = []
     temp_dirs: List[Path] = []
 
@@ -28,7 +24,6 @@ def predict_on_images(model_path: str, image_paths: list[str], *, minio_cfg: Opt
             if not minio_cfg: # Images must come from MinIO
                 raise ValueError("MinIO config required for URI inputs")
             local_path = download_to_temp(src, minio_cfg)
-            print(local_path)
             local = str(local_path)
             temp_dir = local_path.parent
             
@@ -39,9 +34,6 @@ def predict_on_images(model_path: str, image_paths: list[str], *, minio_cfg: Opt
     embedding = embedder.embed_image(img)
     print(f"Generated embedding shape: {embedding.shape}")
     print(f"Embedding sample: {embedding[:5]}...")
-
-    # Make prediction using the classifier
-    print("\nMaking prediction...")
     
     # Reshape embedding for sklearn (needs 2D array: [1, 768])
     embedding_2d = embedding.reshape(1, -1)
@@ -76,7 +68,7 @@ def predict_on_images(model_path: str, image_paths: list[str], *, minio_cfg: Opt
             "raw_score": float(tumor_prob)
         },
         "runtime": {
-            "inference_ms": 0.0,  # We didn't track timing yet
+            "inference_ms": 0.0,  # No timing implemented here
             "device": "cpu"
         }
     }
@@ -92,7 +84,6 @@ def predict_on_images(model_path: str, image_paths: list[str], *, minio_cfg: Opt
         print(f"  Score: {r['regression']['score']:.4f} | Raw: {r['regression']['raw_score']:.4f}")
         print(f"  Probabilities: Normal={p['Normal']:.4f}, Tumor={p['Tumor']:.4f}")
         print(f"  Inference: {r['runtime']['inference_ms']:.1f} ms on {r['runtime']['device']}")
-        print()
 
     return results
 
@@ -112,8 +103,6 @@ def main():
     parser.add_argument("--minio-secure", action="store_true", help="Use HTTPS for MinIO")
 
     args = parser.parse_args()
-
-    print(args)
 
     minio_cfg = None
     # Connecting to minio if all parameters are provided
