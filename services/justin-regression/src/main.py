@@ -2,16 +2,20 @@ import argparse
 import time
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from PIL import Image
+import joblib
 
 from .minio_io import MinioConfig, download_to_temp
 from .dinov2_embedder import DinoV2Embedder
 
 def predict_on_images(model_path: str, image_paths: list[str], *, minio_cfg: Optional[MinioConfig] = None, threshold: float = 0.5, save_jsonl: Optional[str] = None) -> list[dict]:
-    # params = InferenceParams(threshold=threshold, save_jsonl=Path(save_jsonl) if save_jsonl else None)
-    # results = infer_images(model_path, image_paths, minio=minio_cfg, params=params)
-
+    
+    # Load the trained classifier
+    print(f"Loading model from: {model_path}")
+    clf = joblib.load(model_path)
+    print("Model loaded successfully")
+    
     print(image_paths)
 
     results: List[dict] = []
@@ -33,14 +37,53 @@ def predict_on_images(model_path: str, image_paths: list[str], *, minio_cfg: Opt
     x_batch = []
     y_batch = []
     embedding = embedder.embed_image(img)
-    print(embedding.shape)
-    print(embedding)
+    print(f"Generated embedding shape: {embedding.shape}")
+    print(f"Embedding sample: {embedding[:5]}...")
 
+    # Make prediction using the classifier
+    print("\nMaking prediction...")
+    
+    # Reshape embedding for sklearn (needs 2D array: [1, 768])
+    embedding_2d = embedding.reshape(1, -1)
+    
+    # Get prediction (0 or 1)
+    prediction = clf.predict(embedding_2d)[0]
+    
+    # Get probabilities [prob_normal, prob_tumor]
+    probabilities = clf.predict_proba(embedding_2d)[0]
+    
+    # Determine label based on threshold
+    tumor_prob = probabilities[1]
+    label = "Tumor" if tumor_prob >= threshold else "Normal"
+    
+    print(f"Prediction: {prediction} ({'Tumor' if prediction == 1 else 'Normal'})")
+    print(f"Tumor probability: {tumor_prob:.4f}")
+    print(f"Label (threshold={threshold}): {label}")
+    
+    # Build result dictionary
+    result = {
+        "image": src,
+        "classification": {
+            "label": label,
+            "threshold": threshold,
+            "probabilities": {
+                "Normal": float(probabilities[0]),
+                "Tumor": float(probabilities[1])
+            }
+        },
+        "regression": {
+            "score": float(tumor_prob),
+            "raw_score": float(tumor_prob)
+        },
+        "runtime": {
+            "inference_ms": 0.0,  # We didn't track timing yet
+            "device": "cpu"
+        }
+    }
+    
+    results.append(result)
 
-    # Get score here
-
-    print(f"Loaded model from: {model_path}")
-    print(f"Processed {len(image_paths)} images.\n")
+    print(f"\nProcessed {len(image_paths)} images.\n")
 
     for r in results:
         p = r["classification"]["probabilities"]
