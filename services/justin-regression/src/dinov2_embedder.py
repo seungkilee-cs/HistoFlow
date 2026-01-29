@@ -1,8 +1,6 @@
-class DinoV2Embedder:
 import torch
 from PIL import Image
 import numpy as np
-from torchvision import transforms
 from transformers import AutoImageProcessor, AutoModel
 from typing import List
 
@@ -13,18 +11,23 @@ class DinoV2Embedder:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         print(f"[DINOv2] Loading model: {model_name}")
+        # Resize and normalize image for DINOv2
         self.processor = AutoImageProcessor.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name).to(self.device)
+        self.model.eval() # Dropout, etc. disabled for inference
+        # Alternative .train() would enable dropout for uncertainty estimation
 
-    def embed_image(self, image: Image.Image):
-        # Accepts a PIL Image and returns a 768-dim DINOv2 embedding vector.
+    def embed_image(self, image: Image.Image) -> np.ndarray:
+        # Accepts a PIL Image and returns a PyTorch tensor 
         inputs = self.processor(images=image, return_tensors="pt").to(self.device)
 
         with torch.no_grad():
             outputs = self.model(**inputs)
 
         # DINOv2: outputs.last_hidden_state[:,0] is the CLS token
-        embedding = outputs.last_hidden_state[:, 0].cpu().numpy().flatten()
+        # CLS token is the representative vector for the entire image
+        embedding = outputs.last_hidden_state[:, 0].cpu().numpy().flatten() # return numpy array
+        
         return embedding
 
     # Handling images in a batch for efficiency
