@@ -56,3 +56,4 @@ archive/*
 # Services Data
 #**/data/*
 services/*/data/*
+.env
