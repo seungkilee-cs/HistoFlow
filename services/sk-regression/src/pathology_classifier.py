@@ -6,6 +6,11 @@ import numpy as np
 from tqdm import tqdm
 import joblib
 from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC, LinearSVC
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import (
     roc_auc_score,
     accuracy_score,
@@ -61,6 +66,7 @@ class PathologyClassifier:
         self.feature_extractor = SlideRegressor(feature_method, device)
         self.device = device
         self.model = None
+        self.head_config = None
 
     def prepare_transforms(self, augment=False):
         # We can leverage the default transforms from SlideRegressor
@@ -95,14 +101,76 @@ class PathologyClassifier:
 
         return np.vstack(all_features), np.array(all_labels).ravel()
 
-    def train(self, train_dataset, **kwargs):
+    def _build_head_model(
+        self,
+        head_type,
+        use_pca,
+        pca_components,
+        calibrate,
+        calibration_method,
+        calibration_cv,
+        model_kwargs,
+    ):
+        if head_type == "logistic":
+            estimator = LogisticRegression(**model_kwargs)
+        elif head_type == "linear_svm":
+            estimator = LinearSVC(**model_kwargs)
+        elif head_type == "svm_rbf":
+            estimator = SVC(kernel="rbf", probability=False, **model_kwargs)
+        else:
+            raise ValueError(
+                f"Unsupported head_type '{head_type}'. Use one of: logistic, linear_svm, svm_rbf"
+            )
+
+        steps = [("scaler", StandardScaler())]
+        if use_pca:
+            steps.append(("pca", PCA(n_components=pca_components)))
+        steps.append(("clf", estimator))
+        base_model = Pipeline(steps)
+
+        needs_calibration = head_type in {"linear_svm", "svm_rbf"}
+        if calibrate or needs_calibration:
+            return CalibratedClassifierCV(
+                estimator=base_model,
+                method=calibration_method,
+                cv=calibration_cv,
+            )
+        return base_model
+
+    def train(
+        self,
+        train_dataset,
+        head_type="logistic",
+        use_pca=False,
+        pca_components=128,
+        calibrate=False,
+        calibration_method="sigmoid",
+        calibration_cv=3,
+        **kwargs,
+    ):
         print("Extracting training features...")
         X_train, y_train = self._extract_features_from_dataset(train_dataset)
 
-        print(f"Training Logistic Regression head on {len(y_train)} samples...")
-        # Use provided kwargs for LogisticRegression
-        self.model = LogisticRegression(**kwargs)
+        print(f"Training {head_type} head on {len(y_train)} samples...")
+        self.model = self._build_head_model(
+            head_type=head_type,
+            use_pca=use_pca,
+            pca_components=pca_components,
+            calibrate=calibrate,
+            calibration_method=calibration_method,
+            calibration_cv=calibration_cv,
+            model_kwargs=kwargs,
+        )
         self.model.fit(X_train, y_train)
+        self.head_config = {
+            "head_type": head_type,
+            "use_pca": bool(use_pca),
+            "pca_components": int(pca_components) if use_pca else None,
+            "calibrate": bool(calibrate) or head_type in {"linear_svm", "svm_rbf"},
+            "calibration_method": calibration_method,
+            "calibration_cv": int(calibration_cv),
+            "model_kwargs": dict(kwargs),
+        }
 
         print("Training complete.")
 
