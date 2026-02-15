@@ -57,3 +57,6 @@ archive/*
 #**/data/*
 services/*/data/*
 .env
+
+# dir
+exclude/
