@@ -31,6 +31,12 @@ def train_quick_model():
     SUBSET_SIZE_TEST = 10000
     DEFAULT_THRESHOLD = 0.5
     TARGET_SENSITIVITY = 0.9
+    HEAD_TYPE = "svm_rbf"
+    USE_PCA = True
+    PCA_COMPONENTS = 128
+    CALIBRATE = True
+    CALIBRATION_METHOD = "sigmoid"
+    CALIBRATION_CV = 3
 
     print(f"Using device: {DEVICE}")
     print(f"Feature extraction method: {FEATURE_METHOD}")
@@ -72,11 +78,32 @@ def train_quick_model():
         test_dataset = Subset(test_dataset, range(SUBSET_SIZE_TEST))
 
     # Train
+    model_kwargs = {
+        "logistic": {
+            "C": 1.0,
+            "max_iter": 1000,
+            "class_weight": "balanced",
+        },
+        "linear_svm": {
+            "C": 1.0,
+            "max_iter": 10000,
+            "class_weight": "balanced",
+        },
+        "svm_rbf": {
+            "C": 1.0,
+            "gamma": "scale",
+            "class_weight": "balanced",
+        },
+    }
     train_metrics = classifier.train(
         train_dataset,
-        C=1.0,  # Regularization parameter
-        max_iter=1000,
-        class_weight="balanced",
+        head_type=HEAD_TYPE,
+        use_pca=USE_PCA,
+        pca_components=PCA_COMPONENTS,
+        calibrate=CALIBRATE,
+        calibration_method=CALIBRATION_METHOD,
+        calibration_cv=CALIBRATION_CV,
+        **model_kwargs[HEAD_TYPE],
     )
 
     # Evaluate
@@ -100,6 +127,7 @@ def train_quick_model():
             "subset_size_test": SUBSET_SIZE_TEST,
             "default_threshold": DEFAULT_THRESHOLD,
             "target_sensitivity": TARGET_SENSITIVITY,
+            "head": classifier.head_config,
         },
         "train_metrics": train_metrics,
         "test_metrics": test_metrics,
