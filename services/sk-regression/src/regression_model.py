@@ -38,7 +38,9 @@ class SlideRegressor:
 
     def _init_backbone(self, feature_method: str) -> None:
         if feature_method != "resnet18":
-            raise ValueError("Only resnet18 is supported in this reference implementation")
+            raise ValueError(
+                "Only resnet18 is supported in this reference implementation"
+            )
         weights = ResNet18_Weights.DEFAULT
         backbone = resnet18(weights=weights)
         # Drop the FC layer; keep everything up to global avg pool
@@ -69,8 +71,21 @@ class SlideRegressor:
         t0 = time.perf_counter()
         img = Image.open(image_path).convert("RGB")
         feats = self._extract_features(img)
-        raw = float(self.regressor.predict(feats)[0])
-        score = raw
+
+        if hasattr(self.regressor, "predict_proba"):
+            probs = self.regressor.predict_proba(feats)
+            score = float(probs[0][1])
+            if hasattr(self.regressor, "decision_function"):
+                raw = float(self.regressor.decision_function(feats)[0])
+            else:
+                raw = score
+        elif hasattr(self.regressor, "decision_function"):
+            raw = float(self.regressor.decision_function(feats)[0])
+            score = float(1.0 / (1.0 + np.exp(-raw)))
+        else:
+            raw = float(self.regressor.predict(feats)[0])
+            score = float(np.clip(raw, 0.0, 1.0))
+
         dt_ms = (time.perf_counter() - t0) * 1000
         return score, raw, dt_ms
 
