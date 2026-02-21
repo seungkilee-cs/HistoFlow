@@ -3,10 +3,8 @@ package com.histoflow.backend.controller
 import com.histoflow.backend.config.MinioProperties
 import com.histoflow.backend.service.TilingTriggerService
 import io.minio.BucketExistsArgs
-import io.minio.GetPresignedObjectUrlArgs
 import io.minio.MakeBucketArgs
 import io.minio.MinioClient
-import io.minio.http.Method
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -14,8 +12,11 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.s3.presigner.S3Presigner
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest
 import java.util.UUID
-import java.util.concurrent.TimeUnit
+import java.time.Duration
 
 /**
  * Request body for initiating an upload
@@ -80,7 +81,8 @@ data class CompleteUploadResponse(
 class UploadController(
     private val minioClient: MinioClient,
     private val tilingTriggerService: TilingTriggerService,
-    private val minioProperties: MinioProperties
+    private val minioProperties: MinioProperties,
+    private val s3Presigner: S3Presigner
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -120,14 +122,17 @@ class UploadController(
 
             // Generate pre-signed URL for PUT operation
             logger.debug("Generating pre-signed URL for object: {}", objectName)
-            val presignedUrl = minioClient.getPresignedObjectUrl(
-                GetPresignedObjectUrlArgs.builder()
-                    .method(Method.PUT)  // Grant permission to upload
-                    .bucket(bucketName)
-                    .`object`(objectName)
-                    .expiry(15, TimeUnit.MINUTES)  // URL valid for 15 minutes
+            val putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(objectName)
+                .contentType(request.contentType)
+                .build()
+            val presignedUrl = s3Presigner.presignPutObject(
+                PutObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofMinutes(15))
+                    .putObjectRequest(putObjectRequest)
                     .build()
-            )
+            ).url().toString()
             logger.debug("Successfully generated pre-signed URL")
 
             // Return response with pre-signed URL and metadata

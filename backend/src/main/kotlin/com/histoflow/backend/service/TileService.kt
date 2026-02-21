@@ -12,6 +12,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectResponse
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request
+import software.amazon.awssdk.services.s3.model.NoSuchBucketException
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 
 @Service
@@ -123,7 +124,16 @@ class TileService(
                 requestBuilder.continuationToken(token)
             }
 
-            val response = s3Client.listObjectsV2(requestBuilder.build())
+            val response = try {
+                s3Client.listObjectsV2(requestBuilder.build())
+            } catch (_: NoSuchBucketException) {
+                logger.warn("Tiles bucket '{}' does not exist yet; returning empty dataset page", minioProps.buckets.tiles)
+                return DatasetPage(
+                    datasets = emptyList(),
+                    nextContinuationToken = null,
+                    appliedPrefix = originalQuery.orEmpty()
+                )
+            }
 
             response.contents()
                 .asSequence()

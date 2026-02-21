@@ -2,14 +2,40 @@ import React, { useEffect, useRef } from 'react';
 import OpenSeadragon from 'openseadragon';
 import '../styles/ImageViewer.scss';
 
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8080';
+
+interface TilePrediction {
+  tile_x: number;
+  tile_y: number;
+  pixel_x: number;
+  pixel_y: number;
+  width: number;
+  height: number;
+  tumor_probability: number;
+}
+
 interface ImageViewerProps {
   imageId: string;
+  overlays?: TilePrediction[];
+  threshold?: number;
+  overlayOpacity?: number;
+  heatmapUrl?: string;
+  showHeatmap?: boolean;
+  heatmapOpacity?: number;
 }
 
 /**
  * Thin OpenSeadragon wrapper so I can point at a MinIO dataset by imageId.
  */
-const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
+const ImageViewer: React.FC<ImageViewerProps> = ({
+  imageId,
+  overlays = [],
+  threshold = 0.5,
+  overlayOpacity = 0.5,
+  heatmapUrl,
+  showHeatmap = false,
+  heatmapOpacity = 0.45
+}) => {
   const viewerRef = useRef<HTMLDivElement>(null);
   const osdInstanceRef = useRef<OpenSeadragon.Viewer | null>(null);
 
@@ -23,7 +49,7 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
     const viewer = OpenSeadragon({
       element: viewerRef.current,
       prefixUrl: '//openseadragon.github.io/openseadragon/images/',
-      tileSources: `http://localhost:8080/api/v1/tiles/${imageId}/image.dzi`,
+      tileSources: `${API_BASE_URL}/api/v1/tiles/${imageId}/image.dzi`,
       showNavigator: true,
       navigatorPosition: 'BOTTOM_RIGHT',
       showRotationControl: true,
@@ -43,12 +69,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
     // Console breadcrumbs while I'm debugging tile fetches.
     viewer.addHandler('open', () => {
       console.log('OpenSeadragon: Image opened successfully');
-      console.log(`   Image dimensions: ${viewer.world.getItemAt(0).getContentSize()}`);
-    });
-
-    viewer.addHandler('tile-loaded', () => {
-      // Fires every time a tile loads
-      // console.log('Tile loaded');
     });
 
     viewer.addHandler('tile-load-failed', (event: any) => {
@@ -57,7 +77,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
 
     viewer.addHandler('open-failed', (event: any) => {
       console.error('Failed to open image:', event);
-      console.error('   Backend might be down or the dataset is missing in MinIO.');
     });
 
     osdInstanceRef.current = viewer;
@@ -71,6 +90,52 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ imageId }) => {
       }
     };
   }, [imageId]); // Reinitialize if imageId changes
+
+  // Update overlays when they change or when the threshold changes
+  useEffect(() => {
+    const viewer = osdInstanceRef.current;
+    if (!viewer || !viewer.isOpen()) return;
+
+    // Clear existing overlays
+    viewer.clearOverlays();
+
+    if (showHeatmap && heatmapUrl) {
+      const heatmapImage = document.createElement('img');
+      heatmapImage.className = 'heatmap-overlay';
+      heatmapImage.src = heatmapUrl;
+      heatmapImage.alt = 'Analysis heatmap overlay';
+      heatmapImage.style.opacity = heatmapOpacity.toString();
+      heatmapImage.style.pointerEvents = 'none';
+
+      viewer.addOverlay({
+        element: heatmapImage,
+        location: new OpenSeadragon.Rect(0, 0, 1, 1)
+      });
+    }
+
+    console.log(`Updating ${overlays.length} overlays with threshold ${threshold}`);
+
+    // Filter and add new overlays
+    overlays
+      .filter(tile => tile.tumor_probability >= threshold)
+      .forEach((tile, index) => {
+        const rect = viewer.viewport.imageToViewportRectangle(
+          tile.pixel_x, tile.pixel_y, tile.width, tile.height
+        );
+
+        const overlayElement = document.createElement('div');
+        overlayElement.id = `overlay-${index}`;
+        overlayElement.className = 'tumor-overlay';
+        overlayElement.style.border = `2px solid rgba(255, 0, 0, ${overlayOpacity})`;
+        overlayElement.style.backgroundColor = `rgba(255, 0, 0, ${tile.tumor_probability * 0.2 * overlayOpacity})`;
+        overlayElement.title = `Tumor Probability: ${(tile.tumor_probability * 100).toFixed(1)}%`;
+
+        viewer.addOverlay({
+          element: overlayElement,
+          location: rect
+        });
+      });
+  }, [overlays, threshold, overlayOpacity, imageId, showHeatmap, heatmapUrl, heatmapOpacity]);
 
   return <div ref={viewerRef} className="image-viewer" />;
 };

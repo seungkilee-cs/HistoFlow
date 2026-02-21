@@ -10,6 +10,19 @@
   position: relative;
 }
 
+.tumor-overlay {
+  box-sizing: border-box;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.heatmap-overlay {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+
 @media (max-width: 1200px) {
   .image-viewer {
     height: 65vh;

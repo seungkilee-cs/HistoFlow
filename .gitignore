@@ -57,3 +57,20 @@ archive/*
 #**/data/*
 services/*/data/*
 .env
+
+# Python
+**/venv/
+**/.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+**/.pytest_cache/
+
+# Node / Frontend
+**/node_modules/
+**/.vite/
+
+# JVM / Gradle build outputs
+**/.gradle/
+**/build/
