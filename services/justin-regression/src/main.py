@@ -6,76 +6,71 @@ from typing import Optional, List
 from PIL import Image
 import joblib
 
-from .minio_io import MinioConfig, download_to_temp
+from .minio_io import MinioConfig, download_to_temp, cleanup_temp
 from .dinov2_embedder import DinoV2Embedder
 
 def predict_on_images(model_path: str, image_paths: list[str], *, minio_cfg: Optional[MinioConfig] = None, threshold: float = 0.5, save_jsonl: Optional[str] = None) -> list[dict]:
-    
+
     # Load the trained classifier
     clf = joblib.load(model_path)
-    
+    embedder = DinoV2Embedder()
+
     results: List[dict] = []
-    temp_dirs: List[Path] = []
 
     for src in image_paths:
-        local = ''
+        local_path: Optional[Path] = None
         temp_dir: Optional[Path] = None
-        if src.startswith("s3://") or src.startswith("minio://"):
-            if not minio_cfg: # Images must come from MinIO
-                raise ValueError("MinIO config required for URI inputs")
-            local_path = download_to_temp(src, minio_cfg)
-            local = str(local_path)
-            temp_dir = local_path.parent
-            
-    img = Image.open(local_path).convert("RGB")
-    embedder = DinoV2Embedder()
-    x_batch = []
-    y_batch = []
-    embedding = embedder.embed_image(img)
-    print(f"Generated embedding shape: {embedding.shape}")
-    print(f"Embedding sample: {embedding[:5]}...")
-    
-    # Reshape embedding for sklearn (needs 2D array: [1, 768])
-    embedding_2d = embedding.reshape(1, -1)
-    
-    # Get prediction (0 or 1)
-    prediction = clf.predict(embedding_2d)[0]
-    
-    # Get probabilities [prob_normal, prob_tumor]
-    probabilities = clf.predict_proba(embedding_2d)[0]
-    
-    # Determine label based on threshold
-    tumor_prob = probabilities[1]
-    label = "Tumor" if tumor_prob >= threshold else "Normal"
-    
-    print(f"Prediction: {prediction} ({'Tumor' if prediction == 1 else 'Normal'})")
-    print(f"Tumor probability: {tumor_prob:.4f}")
-    print(f"Label (threshold={threshold}): {label}")
-    
-    # Build result dictionary
-    result = {
-        "image": src,
-        "classification": {
-            "label": label,
-            "threshold": threshold,
-            "probabilities": {
-                "Normal": float(probabilities[0]),
-                "Tumor": float(probabilities[1])
-            }
-        },
-        "regression": {
-            "score": float(tumor_prob),
-            "raw_score": float(tumor_prob)
-        },
-        "runtime": {
-            "inference_ms": 0.0,  # No timing implemented here
-            "device": "cpu"
-        }
-    }
-    
-    results.append(result)
+        try:
+            if src.startswith("s3://") or src.startswith("minio://"):
+                if not minio_cfg: # Images must come from MinIO
+                    raise ValueError("MinIO config required for URI inputs")
+                local_path = download_to_temp(src, minio_cfg)
+                temp_dir = local_path.parent
+            else:
+                print(f"Warning: skipping '{src}' — only s3:// or minio:// URIs are supported")                                                                                                                                                              
+                continue
 
-    print(f"\nProcessed {len(image_paths)} images.\n")
+            t0 = time.perf_counter()
+            img = Image.open(local_path).convert("RGB")
+            embedding = embedder.embed_image(img)
+
+            # Reshape embedding for sklearn (needs 2D array: [1, 768])
+            embedding_2d = embedding.reshape(1, -1)
+
+            # Get probabilities [prob_normal, prob_tumor]
+            probabilities = clf.predict_proba(embedding_2d)[0]
+            # Get time taken for embedding + prediction
+            inference_ms = (time.perf_counter() - t0) * 1000
+
+            tumor_prob = float(probabilities[1])
+            label = "Tumor" if tumor_prob >= threshold else "Normal"
+
+            result = {
+                "image": src,
+                "classification": {
+                    "label": label,
+                    "threshold": threshold,
+                    "probabilities": {
+                        "Normal": float(probabilities[0]),
+                        "Tumor": float(probabilities[1])
+                    }
+                },
+                "regression": {
+                    "score": tumor_prob,
+                    "raw_score": tumor_prob
+                },
+                "runtime": {
+                    "inference_ms": inference_ms,
+                    "device": embedder.device
+                }
+            }
+
+            results.append(result)
+        finally:
+            if temp_dir:
+                cleanup_temp(temp_dir)
+
+    print(f"\nProcessed {len(results)} images.\n")
 
     for r in results:
         p = r["classification"]["probabilities"]
