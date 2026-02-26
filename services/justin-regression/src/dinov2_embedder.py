@@ -2,7 +2,6 @@ import torch
 from PIL import Image
 import numpy as np
 from transformers import AutoImageProcessor, AutoModel
-from typing import List
 
 class DinoV2Embedder:
     # Loads DINOv2 model and generates embeddings for image tiles.
@@ -18,7 +17,7 @@ class DinoV2Embedder:
         # Alternative .train() would enable dropout for uncertainty estimation
 
     def embed_image(self, image: Image.Image) -> np.ndarray:
-        # Accepts a PIL Image and returns a PyTorch tensor 
+        # Accepts a PIL Image and returns a 1-D numpy array of shape (768,)
         inputs = self.processor(images=image, return_tensors="pt").to(self.device)
 
         with torch.no_grad():
@@ -30,11 +29,7 @@ class DinoV2Embedder:
         
         return embedding
 
-    # Handling images in a batch for efficiency
-    # Accepts a list of images and returns an array of embeddings.
-    # Processes images in batches for speed.
-    # return (num_images, embedding_dim)
-    def embed_images(self, images: List[Image.Image], batch_size: int = 16):
+    def embed_images(self, images: list[Image.Image], batch_size: int = 16):
         """
         Accepts a list of PIL images and returns an array of embeddings.
         Processes images in batches for speed.
@@ -51,7 +46,7 @@ class DinoV2Embedder:
             with torch.no_grad():
                 outputs = self.model(**inputs)
 
-            # CLS token from each image in batch to shape 
+            # CLS token from each image in batch; shape: (batch_size, 768)
             batch_embeddings = outputs.last_hidden_state[:, 0].cpu().numpy()
 
             all_embeddings.append(batch_embeddings)

@@ -27,46 +27,45 @@ def train_classifier():
     print("=" * 60)
     print(f"Using {NUM_SAMPLES} samples for training")
 
-    # Open HDF5 files
     print("\nOpening HDF5 files...")
-    img_file = h5py.File(train_images_path, 'r')
-    label_file = h5py.File(train_labels_path, 'r')
+    with h5py.File(train_images_path, 'r') as img_file, \
+         h5py.File(train_labels_path, 'r') as label_file:
 
-    images = img_file['x']  # Shape: (N, 96, 96, 3)
-    labels = label_file['y']
+        images = img_file['x']  # Shape: (N, 96, 96, 3)
+        labels = label_file['y']
 
-    print(f"Total samples available: {images.shape[0]:,}")
+        print(f"Total samples available: {images.shape[0]:,}")
 
-    # Initialize DINOv2 embedder
-    print("\nInitializing DINOv2 embedder...")
-    embedder = DinoV2Embedder()
+        # Initialize DINOv2 embedder
+        print("\nInitializing DINOv2 embedder...")
+        embedder = DinoV2Embedder()
 
-    # Collect embeddings and labels
-    print(f"\nGenerating embeddings for {NUM_SAMPLES} samples...")
-    all_embeddings = []
-    all_labels = []
+        # Collect embeddings and labels
+        print(f"\nGenerating embeddings for {NUM_SAMPLES} samples...")
+        all_embeddings = []
+        all_labels = []
 
-    # Process images in batches
-    for i in range(0, NUM_SAMPLES, BATCH_SIZE):
-        batch_end = min(i + BATCH_SIZE, NUM_SAMPLES)
-        batch_images = []
+        # Process images in batches
+        for i in range(0, NUM_SAMPLES, BATCH_SIZE):
+            batch_end = min(i + BATCH_SIZE, NUM_SAMPLES)
+            batch_images = []
 
-        # Load batch of images
-        for j in range(i, batch_end):
-            img_array = images[j]
-            pil_img = Image.fromarray(img_array, 'RGB')
-            batch_images.append(pil_img)
+            # Load batch of images
+            for j in range(i, batch_end):
+                img_array = images[j]
+                pil_img = Image.fromarray(img_array, 'RGB')
+                batch_images.append(pil_img)
 
-            # Get label either 0 or 1
-            label_value = int(labels[j].squeeze())
-            all_labels.append(label_value)
+                # Get label either 0 or 1
+                label_value = int(labels[j].squeeze())
+                all_labels.append(label_value)
 
-        # Generate embeddings for batch
-        batch_embeddings = embedder.embed_images(batch_images, batch_size=len(batch_images))
-        all_embeddings.append(batch_embeddings)
+            # Generate embeddings for batch
+            batch_embeddings = embedder.embed_images(batch_images, batch_size=len(batch_images))
+            all_embeddings.append(batch_embeddings)
 
-        if (i + BATCH_SIZE) % 1000 == 0:
-            print(f"  Processed {i + BATCH_SIZE}/{NUM_SAMPLES} samples...")
+            if (i + BATCH_SIZE) % 1000 == 0:
+                print(f"  Processed {i + BATCH_SIZE}/{NUM_SAMPLES} samples...")
 
     # Convert to numpy arrays
     X = np.vstack(all_embeddings)  # Shape: (NUM_SAMPLES, 768)
@@ -122,10 +121,6 @@ def train_classifier():
     print(f"Validation AUC-ROC:  {auc:.4f}")
     print(f"\nModel saved to: {model_path}")
     print("=" * 60)
-
-    # Close HDF5 files
-    img_file.close()
-    label_file.close()
 
     return clf
 
