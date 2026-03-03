@@ -22,13 +22,13 @@ Tumor / Normal + probability score
 
 **Stage 1 — Embedding:** The image is fed through DINOv2, a large Vision Transformer pretrained by Meta. The model's CLS token output is used as a compact 768-number representation of the image's content.
 
-**Stage 2 — Classification:** The embedding is passed to a lightweight sklearn classifier that was trained on top of DINOv2 embeddings from the PatchCamelyon (PCam) dataset.
+**Stage 2 — Classification:** The embedding is passed to sklearn classifier that was trained on top of DINOv2 embeddings from the PatchCamelyon (PCam) dataset.
 
 ---
 
 ## Dataset
 
-Training uses the [PatchCamelyon (PCam)](https://github.com/basveeling/pcam) dataset — 96x96 pixel patches cropped from whole slide histology images, each labeled Tumor or Normal. The full dataset contains 262,144 training samples; we use 10,000 for faster experimentation.
+Training uses the [PatchCamelyon](https://github.com/basveeling/pcam) dataset, showing 96x96 pixel patches cropped from whole slide histology images, each labeled Tumor or Normal. The full dataset contains 262,144 training samples, and we used 10,000 of them for experimentation as of now.
 
 ---
 
@@ -37,26 +37,25 @@ Training uses the [PatchCamelyon (PCam)](https://github.com/basveeling/pcam) dat
 The other service in this repo (`sk-regression`) uses **ResNet18** as its feature extractor. This service uses **DINOv2**. They represent two different approaches to the same problem.
 
 ### ResNet18 
-- A **Convolutional Neural Network (CNN)**
-- Trained with **supervised learning** on ImageNet — it learned features by being explicitly told what class each image belongs to
+- **Convolutional Neural Network (CNN)**
+- Trained with supervised learning on ImageNet. It learned features by being explicitly told what class each image belongs to
 - Extracts local spatial features by sliding convolutional filters across the image
-- Fast and well-understood; a strong baseline for image classification tasks
-- Produces a feature vector by pooling the final convolutional layer
+- Fast and well-understood. A strong baseline for image classification tasks
 
 ### DINOv2 
-- A **Vision Transformer (ViT)**
-- Trained with **self-supervised learning** — no human labels were used during pretraining. It learned by predicting its own outputs across different views of the same image
+- **Vision Transformer (ViT)**
+- Trained with self-supervised learning, so no human labels were used during pre-training. It learned by predicting its own outputs across different views of the same image
 - Processes the image as a sequence of patches (like words in a sentence) and uses attention to relate them globally
-- The **CLS token** — a special summary token — is used as the embedding, capturing the image's global semantics
-- Produces richer, more transferable representations, especially for specialized domains like medical imaging that look nothing like everyday ImageNet photos
+- The CLS token, or a special summary token, is used as the embedding, capturing the image's global semantics
+- Produces richer, more transferable representations, especially for specialized domains like medical imaging that look nothing like everyday photos
 
 ### Why both?
 Using different feature extractors lets us compare approaches. ResNet is a proven CNN baseline. DINOv2's self-supervised pretraining means it was never biased toward ImageNet categories, which can make its features generalise better to histology images. In practice, DINOv2 embeddings tend to produce better downstream classification accuracy for medical imaging tasks.
 
 ### DINOv2 and whole slide images
-An additional advantage of DINOv2 over ResNet is how Vision Transformers handle image size. ResNet CNNs are designed around a fixed input size — to analyse a whole slide you are forced to chop it into tiles and classify each one independently, with no tile aware of its neighbours.
+An advantage of DINOv2 over ResNet is how Vision Transformers (ViT) handle image size. ResNet CNNs are designed around a fixed input size — to analyse a whole slide you are forced to chop it into tiles and classify each one independently, with no tile aware of its neighbours.
 
-DINOv2 has no hardcoded assumption about image size. It works by splitting whatever image it receives into a grid of small patches and running attention across all of them. This means it can naturally scale to much larger image regions. More importantly, the attention weights the model produces can be visualised directly as a heatmap — the regions the model "paid attention to" tend to correspond to where tumour tissue actually is, without needing to classify tile by tile.
+DINOv2 has no hardcoded assumption about image size. It works by splitting whatever image it receives into a grid of small patches and running attention across all of them. This means it can naturally scale to much larger image regions. More importantly, the attention weights the model produces can be visualised directly as a heatmap. The regions the model paid attention to tend to correspond to where tumour tissue actually is, without needing to classify tile by tile.
 
 This makes DINOv2 a stronger long-term foundation for the heatmap feature in HistoFlow. The current implementation classifies each tile independently, but the architecture leaves open the possibility of feeding larger slide regions directly to DINOv2 and using its attention maps to drive the heatmap, rather than assembling it from individual tile predictions.
 
@@ -67,16 +66,15 @@ This makes DINOv2 a stronger long-term foundation for the heatmap feature in His
 Both classifiers sit on top of the DINOv2 embeddings and are trained with the same data. The only difference is how they draw the decision boundary between Tumor and Normal in the 768-dimensional embedding space.
 
 ### Logistic Regression
-- Fits a **linear** decision boundary
+- Fits a linear decision boundary
 - Fast to train, easy to interpret
 - Works well when the two classes are already well-separated in embedding space — which DINOv2 often achieves
 - Saved to `models/dinov2_classifier.pkl`
 
 ### SVM with RBF Kernel (Support Vector Machine)
-- Fits a **non-linear** decision boundary using the Radial Basis Function (RBF) kernel
+- Fits a non-linear decision boundary using the Radial Basis Function (RBF) kernel
 - Finds the hyperplane that maximises the margin between the two classes
 - Can capture more complex patterns that a linear boundary would miss
-- Wrapped in a `StandardScaler + SVC` sklearn Pipeline — SVM is sensitive to feature scale, so the scaler normalises the embeddings before they reach the SVM. The scaler is bundled into the `.pkl` so inference just works without extra steps
 - Slower to train than logistic regression but can achieve better accuracy on harder separations
 - Saved to `models/dinov2_svm.pkl`
 
