@@ -2,88 +2,111 @@ import argparse
 import time
 import json
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 from PIL import Image
 import joblib
 
-from .minio_io import MinioConfig, download_to_temp
+from .minio_io import MinioConfig, download_to_temp, cleanup_temp
 from .dinov2_embedder import DinoV2Embedder
 
+def infer_one(src: str, minio_client, embedder: DinoV2Embedder, clf, threshold: float) -> dict:
+    """Download, embed, and classify a single image. Cleans up temp files when done."""
+    local_path: Optional[Path] = None
+    temp_dir: Optional[Path] = None
+    try:
+        local_path = download_to_temp(src, minio_client)
+        temp_dir = local_path.parent
+
+        t0 = time.perf_counter()
+        img = Image.open(local_path).convert("RGB")
+        embedding = embedder.embed_image(img)
+
+        # Reshape embedding for sklearn (needs 2D array: [1, 768])
+        embedding_2d = embedding.reshape(1, -1)
+
+        # Get probabilities [prob_normal, prob_tumor]
+        probabilities = clf.predict_proba(embedding_2d)[0]
+        # Get time taken for embedding + prediction
+        inference_ms = (time.perf_counter() - t0) * 1000
+
+        tumor_prob = float(probabilities[1])
+        label = "Tumor" if tumor_prob >= threshold else "Normal"
+
+        return {
+            "image": src,
+            "classification": {
+                "label": label,
+                "threshold": threshold,
+                "probabilities": {
+                    "Normal": float(probabilities[0]),
+                    "Tumor": float(probabilities[1])
+                }
+            },
+            "score": {
+                "score": tumor_prob, # May be processed differently later as we add calculations
+                "raw_score": tumor_prob
+            },
+            "runtime": {
+                "inference_ms": inference_ms,
+                "device": embedder.device
+            }
+        }
+    finally:
+        if temp_dir:
+            cleanup_temp(temp_dir) # Clean up once processing is done
+
+
 def predict_on_images(model_path: str, image_paths: list[str], *, minio_cfg: Optional[MinioConfig] = None, threshold: float = 0.5, save_jsonl: Optional[str] = None) -> list[dict]:
-    
+
     # Load the trained classifier
     clf = joblib.load(model_path)
-    
-    results: List[dict] = []
-    temp_dirs: List[Path] = []
+    embedder = DinoV2Embedder()
+
+    # Create MinIO client once and reuse across all images
+    minio_client = minio_cfg.client() if minio_cfg else None
+
+    results: list[dict] = []
+    failed: list[str] = []
 
     for src in image_paths:
-        local = ''
-        temp_dir: Optional[Path] = None
-        if src.startswith("s3://") or src.startswith("minio://"):
-            if not minio_cfg: # Images must come from MinIO
-                raise ValueError("MinIO config required for URI inputs")
-            local_path = download_to_temp(src, minio_cfg)
-            local = str(local_path)
-            temp_dir = local_path.parent
-            
-    img = Image.open(local_path).convert("RGB")
-    embedder = DinoV2Embedder()
-    x_batch = []
-    y_batch = []
-    embedding = embedder.embed_image(img)
-    print(f"Generated embedding shape: {embedding.shape}")
-    print(f"Embedding sample: {embedding[:5]}...")
-    
-    # Reshape embedding for sklearn (needs 2D array: [1, 768])
-    embedding_2d = embedding.reshape(1, -1)
-    
-    # Get prediction (0 or 1)
-    prediction = clf.predict(embedding_2d)[0]
-    
-    # Get probabilities [prob_normal, prob_tumor]
-    probabilities = clf.predict_proba(embedding_2d)[0]
-    
-    # Determine label based on threshold
-    tumor_prob = probabilities[1]
-    label = "Tumor" if tumor_prob >= threshold else "Normal"
-    
-    print(f"Prediction: {prediction} ({'Tumor' if prediction == 1 else 'Normal'})")
-    print(f"Tumor probability: {tumor_prob:.4f}")
-    print(f"Label (threshold={threshold}): {label}")
-    
-    # Build result dictionary
-    result = {
-        "image": src,
-        "classification": {
-            "label": label,
-            "threshold": threshold,
-            "probabilities": {
-                "Normal": float(probabilities[0]),
-                "Tumor": float(probabilities[1])
-            }
-        },
-        "regression": {
-            "score": float(tumor_prob),
-            "raw_score": float(tumor_prob)
-        },
-        "runtime": {
-            "inference_ms": 0.0,  # No timing implemented here
-            "device": "cpu"
-        }
-    }
-    
-    results.append(result)
+        if not (src.startswith("s3://") or src.startswith("minio://")):
+            print(f"Warning: skipping '{src}' — only s3:// or minio:// URIs are supported")
+            continue
+        if not minio_client:
+            raise ValueError("MinIO config required for URI inputs")
 
-    print(f"\nProcessed {len(image_paths)} images.\n")
+        try:
+            result = infer_one(src, minio_client, embedder, clf, threshold)
+        # Try infer just once more in case of network blip
+        except Exception as e:
+            print(f"Warning: first attempt failed for '{src}' — {e}. Retrying...")
+            try:
+                result = infer_one(src, minio_client, embedder, clf, threshold)
+            except Exception as e2:
+                print(f"Warning: '{src}' failed after retry — {e2}")
+                result = {"image": src, "error": True, "reason": str(e2)}
+                failed.append(src)
+
+        results.append(result)
+
+    print(f"\nProcessed {len(results) - len(failed)} images successfully, {len(failed)} failed.\n")
 
     for r in results:
+        if r.get("error"):
+            print(f"Image: {Path(r['image']).name} — ERROR: {r['reason']}")
+            continue
         p = r["classification"]["probabilities"]
         print(f"Image: {Path(r['image']).name}")
         print(f"  Label: {r['classification']['label']} (threshold={r['classification']['threshold']})")
-        print(f"  Score: {r['regression']['score']:.4f} | Raw: {r['regression']['raw_score']:.4f}")
+        print(f"  Score: {r['score']['score']:.4f} | Raw: {r['score']['raw_score']:.4f}")
         print(f"  Probabilities: Normal={p['Normal']:.4f}, Tumor={p['Tumor']:.4f}")
         print(f"  Inference: {r['runtime']['inference_ms']:.1f} ms on {r['runtime']['device']}")
+
+    if save_jsonl:
+        with open(save_jsonl, "w") as f:
+            for r in results:
+                f.write(json.dumps(r) + "\n")
+        print(f"\nResults saved to: {save_jsonl}")
 
     return results
 

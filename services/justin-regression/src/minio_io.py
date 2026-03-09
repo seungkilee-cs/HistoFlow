@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
 from urllib.parse import urlparse
 import tempfile
 import shutil
@@ -11,7 +10,7 @@ from minio import Minio
 
 SUPPORTED_SCHEMES = {"s3", "minio"}
 
-def parse_uri(uri: str) -> Tuple[str, str]:
+def parse_uri(uri: str) -> tuple[str, str]:
     """Parse an s3/minio URI into (bucket, key).
     
     Example: s3://my-bucket/path/to/file.svs -> ("my-bucket", "path/to/file.svs")
@@ -44,14 +43,13 @@ class MinioConfig:
         )
 
 
-def download_to_temp(uri: str, cfg: MinioConfig) -> Path:
+def download_to_temp(uri: str, client: Minio) -> Path:
     """Download an object to a temporary directory and return the local file path.
 
-    Creates a temp dir with prefix 'skreg_' that the caller can clean up if desired.
+    Creates a temp dir with prefix 'justinreg_' that the caller can clean up if desired.
     """
     bucket, key = parse_uri(uri)
-    client = cfg.client()
-    tmp_dir = Path(tempfile.mkdtemp(prefix="skreg_"))
+    tmp_dir = Path(tempfile.mkdtemp(prefix="justinreg_"))
     local_path = tmp_dir / Path(key).name
     client.fget_object(bucket, key, str(local_path))
     return local_path
