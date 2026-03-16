@@ -9,7 +9,7 @@
 
 .upload-container {
   width: 30%;
-  height: 50vh;
+  min-height: 50vh;
   border: 2px dashed #fff;
   border-radius: 8px;
   padding: 2rem;
@@ -23,6 +23,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
+  gap: 1rem;
 }
 
 .upload-button {
@@ -51,4 +52,135 @@
   border-radius: 8px;
   object-fit: contain;
   background: #222;
+}
+
+.upload-status {
+  width: 100%;
+  margin-top: 0.5rem;
+  text-align: left;
+}
+
+.upload-status__message {
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.upload-progress {
+  width: 100%;
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.upload-progress__track {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.upload-progress__fill {
+  height: 100%;
+  background: #fca311;
+  transition: width 200ms ease;
+}
+
+.upload-progress--backend .upload-progress__fill {
+  background: #7bd389;
+}
+
+.upload-progress__label {
+  min-width: 3rem;
+  text-align: right;
+  font-weight: 600;
+  color: #fff;
+}
+
+.upload-activity {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+
+.upload-activity__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.upload-activity__header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.upload-activity__header span {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8rem;
+}
+
+.upload-activity__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.upload-activity__item {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.upload-activity__item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.upload-activity__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.upload-activity__stage {
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-weight: 600;
+}
+
+.upload-activity__message,
+.upload-activity__detail {
+  margin: 0;
+}
+
+.upload-activity__message {
+  color: #fff;
+  font-size: 0.92rem;
+}
+
+.upload-activity__detail {
+  margin-top: 0.15rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 900px) {
+  .upload-container {
+    width: min(92vw, 42rem);
+  }
 }

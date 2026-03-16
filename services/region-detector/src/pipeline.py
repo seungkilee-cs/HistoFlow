@@ -30,10 +30,12 @@ from .heatmap import generate_heatmap, heatmap_to_png_bytes
 from .minio_io import (
     TileRef,
     download_tile_image,
+    list_available_tile_levels,
     list_tiles_at_level,
     parse_dzi,
     upload_bytes,
 )
+from .tile_levels import select_analysis_level
 from .tissue_detector import TissueResult, detect_tissue
 
 
@@ -81,7 +83,7 @@ class AnalysisResult:
 
 # ── Progress callback ────────────────────────────────────────────────────────
 
-ProgressCallback = Optional[Callable[[int, int, str], None]]
+ProgressCallback = Optional[Callable[[int, int, str, int | None], None]]
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -113,7 +115,7 @@ def run_analysis(
     progress_cb:
         Optional ``(processed, total, message)`` callback for status updates.
     """
-    tile_level = tile_level if tile_level is not None else settings.DEFAULT_TILE_LEVEL
+    requested_tile_level = tile_level if tile_level is not None else settings.DEFAULT_TILE_LEVEL
     threshold = threshold if threshold is not None else settings.CLASSIFICATION_THRESHOLD
     tissue_thresh = (
         tissue_threshold if tissue_threshold is not None else settings.TISSUE_THRESHOLD
@@ -129,11 +131,29 @@ def run_analysis(
 
     # ── 2. List tiles at the chosen level ─────────────────────────────
     t0 = time.perf_counter()
+    available_levels = list_available_tile_levels(image_id)
+    if not available_levels:
+        raise ValueError(f"No tiles found for image_id={image_id}")
+
+    tile_level = select_analysis_level(
+        available_levels=available_levels,
+        requested_level=tile_level,
+        default_level=settings.DEFAULT_TILE_LEVEL,
+    )
+    if tile_level != requested_tile_level:
+        _report(
+            progress_cb,
+            0,
+            0,
+            f"Requested level {requested_tile_level} unavailable. Using level {tile_level}",
+            tile_level,
+        )
+
     tile_refs = list_tiles_at_level(image_id, tile_level)
     timings["list_tiles_s"] = round(time.perf_counter() - t0, 3)
 
     total = len(tile_refs)
-    _report(progress_cb, 0, total, f"Found {total} tiles at level {tile_level}")
+    _report(progress_cb, 0, total, f"Found {total} tiles at level {tile_level}", tile_level)
 
     if total == 0:
         raise ValueError(
@@ -201,7 +221,7 @@ def run_analysis(
                 )
             )
             if (idx + 1) % 20 == 0 or idx + 1 == total:
-                _report(progress_cb, idx + 1, total, "Analysing tiles")
+                _report(progress_cb, idx + 1, total, "Analysing tiles", tile_level)
             continue
 
         tissue_count += 1
@@ -247,7 +267,7 @@ def run_analysis(
                 batch_tissue.clear()
 
         if (idx + 1) % 20 == 0 or idx + 1 == total:
-            _report(progress_cb, idx + 1, total, "Analysing tiles")
+            _report(progress_cb, idx + 1, total, "Analysing tiles", tile_level)
 
     timings["analysis_s"] = round(time.perf_counter() - t_analysis, 3)
 
@@ -271,14 +291,14 @@ def run_analysis(
 
     # ── 5. Heatmap ────────────────────────────────────────────────────
     t0 = time.perf_counter()
-    _report(progress_cb, total, total, "Generating heatmap")
+    _report(progress_cb, total, total, "Generating heatmap", tile_level)
     heatmap_img = generate_heatmap(prob_grid, tile_size=dzi.tile_size)
     heatmap_bytes = heatmap_to_png_bytes(heatmap_img)
     heatmap_key = f"{image_id}/heatmap_level_{tile_level}.png"
     upload_bytes(heatmap_bytes, heatmap_key, content_type="image/png")
     timings["heatmap_s"] = round(time.perf_counter() - t0, 3)
 
-    _report(progress_cb, total, total, "Complete")
+    _report(progress_cb, total, total, "Complete", tile_level)
 
     return AnalysisResult(
         image_id=image_id,
@@ -296,6 +316,12 @@ def run_analysis(
     )
 
 
-def _report(cb: ProgressCallback, done: int, total: int, msg: str) -> None:
+def _report(
+    cb: ProgressCallback,
+    done: int,
+    total: int,
+    msg: str,
+    tile_level: int | None = None,
+) -> None:
     if cb is not None:
-        cb(done, total, msg)
+        cb(done, total, msg, tile_level)

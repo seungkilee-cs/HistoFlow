@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClientException
 import org.springframework.web.client.RestTemplate
+import java.util.UUID
 
 /**
  * Service responsible for triggering the tiling microservice
@@ -29,13 +30,14 @@ class TilingTriggerService(
         imageId: String,
         sourceBucket: String,
         sourceObjectName: String,
-        datasetName: String?
+        datasetName: String?,
+        jobId: UUID? = null
     ) {
         logger.info("Triggering tiling job: imageId={}, bucket={}, object={}", 
             imageId, sourceBucket, sourceObjectName)
         
         when (tilingProperties.strategy.lowercase()) {
-            "direct-http" -> triggerViaHttp(imageId, sourceBucket, sourceObjectName, datasetName)
+            "direct-http" -> triggerViaHttp(imageId, sourceBucket, sourceObjectName, datasetName, jobId)
             else -> {
                 logger.error("Unsupported tiling strategy: {}", tilingProperties.strategy)
                 throw IllegalStateException("Unsupported tiling trigger strategy")
@@ -47,12 +49,14 @@ class TilingTriggerService(
         imageId: String,
         sourceBucket: String,
         sourceObjectName: String,
-        datasetName: String?
+        datasetName: String?,
+        jobId: UUID?
     ) {
         val url = "${tilingProperties.baseUrl}/jobs/tile-image"
 
         // Create payload
         val payload = TilingJobRequest(
+            jobId = jobId,
             imageId = imageId,
             sourceBucket = sourceBucket,
             sourceObjectName = sourceObjectName,
@@ -108,6 +112,9 @@ class TilingTriggerService(
  * Maps to Python FastAPI TileJobRequest schema
  */
 data class TilingJobRequest(
+    @JsonProperty("job_id")
+    val jobId: UUID? = null,
+
     @JsonProperty("image_id")
     val imageId: String,
 

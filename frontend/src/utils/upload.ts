@@ -6,9 +6,18 @@ type InitiateResponse = {
   uploadId: string;
   key: string;
   partSize: number;
+  imageId: string;
+  datasetName: string;
 };
 
 type PresignResponse = { urls?: Array<{ partNumber: number; url: string }>; url?: string };
+type CompleteResponse = {
+  jobId?: string;
+  imageId?: string;
+  datasetName?: string;
+  status?: string;
+  message?: string;
+};
 
 // --- Persistence helpers --------------------------------------------------
 function storageKeyForFile(file: File) {
@@ -46,12 +55,19 @@ function removePersisted(file: File) {
 async function initiateUploadOnServer(
   file: File,
   partSizeHint: number,
+  datasetName?: string,
   signal?: AbortSignal
 ): Promise<InitiateResponse> {
   const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/multipart/initiate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: file.name, size: file.size, contentType: file.type, partSizeHint }),
+    body: JSON.stringify({
+      filename: file.name,
+      size: file.size,
+      contentType: file.type,
+      partSizeHint,
+      datasetName,
+    }),
     signal,
   });
   if (!resp.ok) {
@@ -123,32 +139,46 @@ async function completeUploadOnServer(
   uploadId: string,
   key: string,
   parts: Array<{ partNumber: number; etag: string }>,
+  datasetName?: string,
   signal?: AbortSignal
 ) {
   const resp = await fetch(`${API_BASE_URL}/api/v1/uploads/multipart/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uploadId, key, parts }),
+    body: JSON.stringify({ uploadId, key, parts, datasetName }),
     signal,
   });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
     throw new Error(`Complete failed: ${resp.status} ${resp.statusText} ${txt}`);
   }
-  return resp.json().catch(() => ({}));
+  return resp.json().catch(() => ({})) as Promise<CompleteResponse>;
+}
+
+export function createPartNumberAllocator(totalParts: number) {
+  let nextPart = 1;
+  return () => {
+    if (nextPart > totalParts) {
+      return null;
+    }
+
+    const partNumber = nextPart;
+    nextPart += 1;
+    return partNumber;
+  };
 }
 
 // Create workers to upload parts concurrently and run them
 async function runWorkers(totalParts: number, concurrency: number, workerFn: (partNumber: number) => Promise<void>) {
-  let nextPart = 1;
+  const claimPart = createPartNumberAllocator(totalParts);
   const workers: Promise<void>[] = [];
   for (let i = 0; i < concurrency; i++) {
     const worker = (async () => {
-        while (true) {
-            if (nextPart > totalParts) break; // Exit worker
-            await workerFn(nextPart); // PUT call happens here
-            nextPart += 1;
-        }
+      while (true) {
+        const partNumber = claimPart();
+        if (partNumber === null) break;
+        await workerFn(partNumber);
+      }
     })();
     workers.push(worker);
   }
@@ -171,14 +201,16 @@ export async function uploadFileWithPresignedMultipart(
     onProgress,
     signal,
     batchPresign = true,
+    datasetName,
   }: {
     concurrency?: number;
     partSizeHint?: number;
     onProgress?: UploadProgressCb;
     signal?: AbortSignal;
     batchPresign?: boolean; // if backend supports batch presign
+    datasetName?: string;
   } = {}
-): Promise<{ success: boolean; key?: string }> {
+): Promise<{ success: boolean; key?: string; jobId?: string; imageId: string; datasetName: string; status: string; message: string }> {
   if (!file) throw new Error('No file provided');
 
   // try to load persisted state (for resume)
@@ -187,17 +219,23 @@ export async function uploadFileWithPresignedMultipart(
   let uploadId: string;
   let key: string;
   let partSize: number;
+  let imageId: string | undefined;
+  let resolvedDatasetName = datasetName || file.name;
 
   if (persisted && persisted.uploadId && persisted.key && persisted.partSize) {
     uploadId = persisted.uploadId;
     key = persisted.key;
     partSize = persisted.partSize;
+    imageId = persisted.imageId;
+    resolvedDatasetName = persisted.datasetName || resolvedDatasetName;
   } else {
-    const init = await initiateUploadOnServer(file, partSizeHint, signal);
+    const init = await initiateUploadOnServer(file, partSizeHint, datasetName, signal);
     uploadId = init.uploadId;
     key = init.key;
     partSize = init.partSize || partSizeHint;
-    persisted = { uploadId, key, partSize, uploadedParts: {} };
+    imageId = init.imageId;
+    resolvedDatasetName = init.datasetName || resolvedDatasetName;
+    persisted = { uploadId, key, partSize, imageId, datasetName: resolvedDatasetName, uploadedParts: {} };
     savePersisted(file, persisted);
   }
 
@@ -263,10 +301,18 @@ export async function uploadFileWithPresignedMultipart(
     .map(([k, v]) => ({ partNumber: Number(k), etag: v }))
     .sort((a, b) => a.partNumber - b.partNumber);
 
-  await completeUploadOnServer(uploadId, key, partsArray, signal);
+  const completion = await completeUploadOnServer(uploadId, key, partsArray, datasetName, signal);
 
   // cleanup
   removePersisted(file);
 
-  return { success: true, key };
+  return {
+    success: true,
+    key,
+    jobId: completion.jobId,
+    imageId: completion.imageId || imageId || key,
+    datasetName: completion.datasetName || resolvedDatasetName,
+    status: completion.status || 'accepted',
+    message: completion.message || 'Upload complete. Waiting for tiling worker.',
+  };
 }

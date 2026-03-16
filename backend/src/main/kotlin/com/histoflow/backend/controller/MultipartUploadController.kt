@@ -3,6 +3,7 @@ package com.histoflow.backend.controller
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.histoflow.backend.service.UploadService
 import com.histoflow.backend.service.TilingTriggerService
+import com.histoflow.backend.service.TilingJobService
 import com.histoflow.backend.config.MinioProperties
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
@@ -16,13 +17,16 @@ import org.slf4j.LoggerFactory
 data class InitiateMultipartRequest(
     val filename: String,
     val contentType: String? = null,
-    val partSizeHint: Long? = null
+    val partSizeHint: Long? = null,
+    val datasetName: String? = null
 )
 
 data class InitiateMultipartResponse(
     val uploadId: String,
     val key: String,
-    val partSize: Long
+    val partSize: Long,
+    val imageId: String,
+    val datasetName: String
 )
 
 data class PresignRequest(
@@ -42,6 +46,14 @@ data class CompleteRequest(
     val datasetName: String? = null
 )
 
+data class CompleteMultipartResponse(
+    val jobId: String,
+    val imageId: String,
+    val datasetName: String,
+    val status: String,
+    val message: String
+)
+
 data class AbortRequest(val uploadId: String, val key: String)
 
 
@@ -49,6 +61,7 @@ data class AbortRequest(val uploadId: String, val key: String)
 @RequestMapping("/api/v1/uploads/multipart")
 class MultipartUploadController(
     private val uploadService: UploadService,
+    private val tilingJobService: TilingJobService,
     private val tilingTriggerService: TilingTriggerService,
     private val minioProperties: MinioProperties
     ) {
@@ -58,8 +71,21 @@ class MultipartUploadController(
     @PostMapping("/initiate")
     fun initiate(@RequestBody req: InitiateMultipartRequest): ResponseEntity<InitiateMultipartResponse> {
         return try {
-            val result = uploadService.initiateMultipartUpload(req.filename, req.contentType, req.partSizeHint)
-            ResponseEntity.ok(InitiateMultipartResponse(result.uploadId, result.key, result.partSize))
+            val result = uploadService.initiateMultipartUpload(
+                req.filename,
+                req.contentType,
+                req.partSizeHint,
+                req.datasetName
+            )
+            ResponseEntity.ok(
+                InitiateMultipartResponse(
+                    result.uploadId,
+                    result.key,
+                    result.partSize,
+                    result.imageId,
+                    result.datasetName
+                )
+            )
         } catch (ex: Exception) {
             ex.printStackTrace()
             ResponseEntity.internalServerError().build()
@@ -87,23 +113,30 @@ class MultipartUploadController(
             val parts = req.parts.map { Pair(it.partNumber, it.etag) }
             uploadService.completeMultipartUpload(req.uploadId, req.key, parts)
 
-            // extract image id for the tiling call
             val imageId = extractImageId(req.key)
-            val datasetName = extractDatasetName(req.key)
+            val datasetName = req.datasetName?.takeIf { it.isNotBlank() } ?: extractDatasetName(req.key)
+            val job = tilingJobService.createQueuedJob(imageId, datasetName)
             logger.info("Multipart upload complete: imageId={}, key={}", imageId, req.key)
 
-            // trigger tiling
             tilingTriggerService.triggerTiling(
                 imageId = imageId,
                 sourceBucket = minioProperties.buckets.uploads,
                 sourceObjectName = req.key,
-                // ultimately want to pass this in from frontend or fall back on the file name, possibly add timestamp
-                datasetName = datasetName
+                datasetName = datasetName,
+                jobId = job.id
             )
             
             logger.info("Tiling job triggered for imageId={}", imageId)
 
-            ResponseEntity.ok().build()
+            ResponseEntity.ok(
+                CompleteMultipartResponse(
+                    jobId = job.id.toString(),
+                    imageId = imageId,
+                    datasetName = datasetName,
+                    status = "accepted",
+                    message = "Upload complete. Waiting for tiling worker."
+                )
+            )
 
         } catch (ex: Exception) {
             ex.printStackTrace()
@@ -129,9 +162,11 @@ class MultipartUploadController(
             return match.groupValues[1]
         }
 
-        // fallback: strip prefix and any trailing filename separator
-        return key.substringAfterLast('/')
-            .substringBeforeLast('-', missingDelimiterValue = key)
+        if (key.contains('/')) {
+            return key.substringBefore('/')
+        }
+
+        return key.substringBeforeLast('-', missingDelimiterValue = key)
     }
 
     // dataset name fallback
