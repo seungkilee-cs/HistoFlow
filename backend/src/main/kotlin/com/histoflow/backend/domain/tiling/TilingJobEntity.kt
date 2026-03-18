@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
+import jakarta.persistence.Lob
 import jakarta.persistence.PrePersist
 import jakarta.persistence.PreUpdate
 import jakarta.persistence.Table
@@ -30,11 +31,25 @@ class TilingJobEntity(
     @Column(nullable = false)
     var status: TilingJobStatus = TilingJobStatus.PENDING,
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    var stage: TilingJobStage = TilingJobStage.QUEUED,
+
+    @Column(nullable = true, length = 1024)
+    var message: String? = null,
+
     @Column(nullable = true, length = 1024)
     var failureReason: String? = null,
 
     @Column(nullable = true)
     var metadataPath: String? = null,
+
+    @Column(nullable = true)
+    var stageProgressPercent: Int? = null,
+
+    @Lob
+    @Column(nullable = false)
+    var activityEntriesJson: String = "[]",
 
     @Column(nullable = false)
     var createdAt: Instant = Instant.now(),

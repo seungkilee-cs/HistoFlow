@@ -13,6 +13,7 @@ tiling_service = TilingService()
 
 # Define the data we expect to receive in a job request
 class TilingJob(BaseModel):
+    job_id: Optional[str] = None
     image_id: str
     source_bucket: str
     source_object_name: str  # e.g., "unprocessed/image_id/my-file.svs"
@@ -29,6 +30,7 @@ async def create_tiling_job(job: TilingJob, background_tasks: BackgroundTasks):
     # Add the long-running task to be executed after the response is sent
     background_tasks.add_task(
         tiling_service.process_image,
+        job_id=job.job_id,
         image_id=job.image_id,
         source_object_name=job.source_object_name,
         source_bucket=job.source_bucket,

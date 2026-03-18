@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 
+from .config import settings
 from .pipeline import AnalysisResult, run_analysis
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -53,11 +54,19 @@ class JobState:
         self.error: Optional[str] = None
         self._lock = threading.Lock()
 
-    def update_progress(self, done: int, total: int, msg: str) -> None:
+    def update_progress(
+        self,
+        done: int,
+        total: int,
+        msg: str,
+        tile_level: int | None = None,
+    ) -> None:
         with self._lock:
             self.tiles_processed = done
             self.total_tiles = total
             self.message = msg
+            if tile_level is not None:
+                self.tile_level = tile_level
             if self.status == JobStatus.ACCEPTED:
                 self.status = JobStatus.PROCESSING
 
@@ -119,6 +128,7 @@ def _run_job(job_id: str, req: AnalyzeRequest) -> None:
             "timings": result.timings,
             "tile_predictions": tile_dicts,
         }
+        state.tile_level = result.tile_level
         state.status = JobStatus.COMPLETED
         state.message = "Analysis complete"
 
@@ -138,7 +148,7 @@ async def submit_analysis(req: AnalyzeRequest, background_tasks: BackgroundTasks
     job_id = str(uuid.uuid4())
     state = JobState(
         image_id=req.image_id,
-        tile_level=req.tile_level or 12,
+        tile_level=req.tile_level or settings.DEFAULT_TILE_LEVEL,
         threshold=req.threshold or 0.5,
     )
     _jobs[job_id] = state

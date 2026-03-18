@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -13,6 +15,7 @@ class Settings(BaseSettings):
 
     # Worker Settings
     TEMP_STORAGE_PATH: str = "/tmp/histoflow_tiling"
+    BACKEND_INTERNAL_BASE_URL: Optional[str] = None
 
 # Create a single, importable instance of the settings
 settings = Settings()

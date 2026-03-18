@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import ImageViewer from '../components/ImageViewer';
 import '../styles/TileViewerPage.scss';
 
@@ -19,6 +20,7 @@ type DatasetPage = {
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8080';
 
 const TileViewerPage: React.FC = () => {
+  const { imageId: routeImageId } = useParams<{ imageId?: string }>();
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
   const [activeDatasetName, setActiveDatasetName] = useState<string | null>(null);
   const [viewerKey, setViewerKey] = useState(0);
@@ -96,6 +98,15 @@ const TileViewerPage: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!routeImageId) {
+      return;
+    }
+
+    initialisedRef.current = true;
+    applyDatasetById(routeImageId);
+  }, [routeImageId]);
+
+  useEffect(() => {
     const controller = new AbortController();
     const loadFeatured = async () => {
       try {
@@ -110,7 +121,7 @@ const TileViewerPage: React.FC = () => {
         }
         const data: DatasetPage = await response.json();
         setFeaturedDatasets(data.datasets);
-        if (!initialisedRef.current && data.datasets.length > 0) {
+        if (!routeImageId && !initialisedRef.current && data.datasets.length > 0) {
           initialisedRef.current = true;
           applyDataset(data.datasets[0]);
         }
@@ -125,7 +136,7 @@ const TileViewerPage: React.FC = () => {
 
     loadFeatured();
     return () => controller.abort();
-  }, []);
+  }, [routeImageId]);
 
   useEffect(() => {
     if (!searchTerm) {
@@ -204,7 +215,7 @@ const TileViewerPage: React.FC = () => {
       setErrorMessage(null);
       setHeatmapWarning(null);
       setHeatmapUrl(null);
-      const response = await fetch(`${API_BASE_URL}/api/v1/analysis/trigger/${activeImageId}?tileLevel=12`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/analysis/trigger/${activeImageId}`, {
         method: 'POST'
       });
       if (!response.ok) throw new Error('Failed to trigger analysis');

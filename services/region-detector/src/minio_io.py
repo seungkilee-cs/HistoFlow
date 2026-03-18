@@ -121,6 +121,25 @@ def list_tiles_at_level(
     return tiles
 
 
+def list_available_tile_levels(
+    image_id: str,
+    bucket: str | None = None,
+) -> List[int]:
+    """Return all available DZI levels for *image_id*."""
+    bucket = bucket or settings.TILES_BUCKET
+    client = _client()
+    prefix = f"{image_id}/image_files/"
+    levels: set[int] = set()
+
+    for obj in client.list_objects(bucket, prefix=prefix):
+        relative_path = obj.object_name[len(prefix):]
+        level_token = relative_path.split("/", 1)[0]
+        if level_token.isdigit():
+            levels.add(int(level_token))
+
+    return sorted(levels)
+
+
 def download_tile_image(
     object_key: str,
     bucket: str | None = None,
