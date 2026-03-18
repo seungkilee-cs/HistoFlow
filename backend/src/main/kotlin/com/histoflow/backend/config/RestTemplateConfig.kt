@@ -10,6 +10,7 @@ import org.springframework.http.HttpRequest
 import org.springframework.http.client.ClientHttpRequestExecution
 import org.springframework.http.client.ClientHttpRequestInterceptor
 import org.springframework.http.client.ClientHttpResponse
+import org.springframework.http.client.BufferingClientHttpRequestFactory
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter
 import org.springframework.web.client.RestTemplate
@@ -52,7 +53,7 @@ class RestTemplateConfig {
         // Create Jackson message converter
         val jacksonConverter = MappingJackson2HttpMessageConverter(objectMapper)
         
-        return RestTemplate(requestFactory).apply {
+        return RestTemplate(BufferingClientHttpRequestFactory(requestFactory)).apply {
             messageConverters = listOf(jacksonConverter)
             interceptors = listOf(loggingInterceptor(objectMapper))
         }
@@ -86,7 +87,7 @@ class RestTemplateConfig {
             logger.debug("Status: {}", response.statusCode)
             logger.debug("Headers: {}", response.headers)
             try {
-                val raw = response.body?.readAllBytes()?.toString(StandardCharsets.UTF_8)
+                val raw = response.body.readAllBytes().toString(StandardCharsets.UTF_8)
                 if (!raw.isNullOrBlank()) {
                     val pretty = try {
                         val json = objectMapper.readTree(raw)
@@ -95,12 +96,6 @@ class RestTemplateConfig {
                         raw
                     }
                     logger.debug("Body: {}", pretty)
-
-                    val buffer = raw.toByteArray(StandardCharsets.UTF_8)
-                    response::class.java.getDeclaredField("body").apply {
-                        isAccessible = true
-                        set(response, buffer.inputStream())
-                    }
                 }
             } catch (ex: Exception) {
                 logger.warn("Failed to log response body", ex)

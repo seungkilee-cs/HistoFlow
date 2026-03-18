@@ -1,6 +1,14 @@
 version: "3.9"
 
 services:
+  backend:
+    environment:
+      - ANALYSIS_BASE_URL=http://region-detector:8001
+    depends_on:
+      - postgres
+      - minio
+      - region-detector
+
   sk-regression:
     build:
       context: ../services/sk-regression
@@ -19,4 +27,26 @@ services:
       - minio
     # Keep container alive; run predict via `docker compose exec sk-regression ...`
     command: tail -f /dev/null
+    profiles: ["cpu", "dev"]
+
+  region-detector:
+    build:
+      context: ../services/region-detector
+      dockerfile: Dockerfile
+    container_name: region-detector
+    shm_size: "1g"
+    ports:
+      - "8001:8001"
+    environment:
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_SECURE=false
+      - TILES_BUCKET=histoflow-tiles
+      - MODEL_PATH=/app/models/dinov2_classifier.pkl
+    volumes:
+      - ../services/region-detector/src:/app/src
+      - ../services/justin-regression/models:/app/models
+    depends_on:
+      - minio
     profiles: ["cpu", "dev"]
