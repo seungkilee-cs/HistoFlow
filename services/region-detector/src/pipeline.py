@@ -4,23 +4,34 @@ Steps
 -----
 1. Parse the DZI descriptor to learn the tile grid dimensions.
 2. List all tiles at the requested zoom level.
-3. For each tile:
-   a. Download the image from MinIO.
-   b. Run tissue detection (skip if background).
-   c. Embed tissue tiles with DINOv2.
-   d. Classify each embedding with the sklearn head.
-4. Aggregate tile-level results into a slide-level summary.
-5. Generate a heatmap overlay image and upload it to MinIO.
-6. Return the full result (tile predictions + summary + heatmap path).
+3. Download all tiles concurrently from MinIO.
+4. For each tile:
+   a. Run tissue detection (skip if background).
+   b. Embed tissue tiles with DINOv2 (batched).
+   c. Classify each embedding with the sklearn head.
+5. Aggregate tile-level results into a slide-level summary.
+6. Generate a heatmap overlay image and upload it to MinIO.
+7. Return the full result (tile predictions + summary + heatmap path).
+
+Performance notes
+-----------------
+- ML models (DINOv2 + classifier) are module-level singletons loaded once at
+  process startup, not per job.  This avoids a 20-30 s cold-start on every
+  analysis request.
+- Tile downloads are parallelised with a thread pool (DOWNLOAD_WORKERS threads)
+  to saturate network I/O and hide per-tile round-trip latency.
 """
 
 from __future__ import annotations
 
+import threading
 import time
-from dataclasses import dataclass, asdict
-from typing import Any, Callable, Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import asdict, dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
+from PIL import Image
 
 from .classifier import Classifier
 from .config import settings
@@ -37,6 +48,42 @@ from .minio_io import (
 )
 from .tile_levels import select_analysis_level
 from .tissue_detector import TissueResult, detect_tissue
+
+
+# ── Module-level model singletons ────────────────────────────────────────────
+# Loaded once when the module is first used (or explicitly at startup).
+# Thread-safe: both models are read-only during inference.
+
+_embedder: Optional[Embedder] = None
+_classifier: Optional[Classifier] = None
+_model_lock = threading.Lock()
+
+
+def get_embedder() -> Embedder:
+    global _embedder
+    with _model_lock:
+        if _embedder is None:
+            print("[pipeline] Loading DINOv2 embedder…")
+            _embedder = Embedder()
+            print("[pipeline] Embedder ready.")
+    return _embedder
+
+
+def get_classifier() -> Classifier:
+    global _classifier
+    with _model_lock:
+        if _classifier is None:
+            print("[pipeline] Loading sklearn classifier…")
+            _classifier = Classifier()
+            _classifier.load()
+            print("[pipeline] Classifier ready.")
+    return _classifier
+
+
+def preload_models() -> None:
+    """Eagerly initialise both models.  Call this at service startup."""
+    get_embedder()
+    get_classifier()
 
 
 # ── Result data classes ───────────────────────────────────────────────────────
@@ -62,7 +109,7 @@ class SlideSummary:
     total_tiles: int
     tissue_tiles: int
     skipped_tiles: int
-    flagged_tiles: int  # tiles exceeding threshold
+    flagged_tiles: int
     tumor_area_percentage: float
     aggregate_score: float
     max_score: float
@@ -77,13 +124,42 @@ class AnalysisResult:
     dzi: Dict[str, Any]
     summary: SlideSummary
     tile_predictions: List[TilePrediction]
-    heatmap_key: str  # MinIO object key
+    heatmap_key: str
     timings: Dict[str, float]
 
 
-# ── Progress callback ────────────────────────────────────────────────────────
+# ── Progress callback ─────────────────────────────────────────────────────────
 
 ProgressCallback = Optional[Callable[[int, int, str, int | None], None]]
+
+
+# ── Concurrent tile downloader ────────────────────────────────────────────────
+
+
+def _download_tiles_parallel(
+    tile_refs: List[TileRef],
+    max_workers: int,
+    progress_cb: ProgressCallback = None,
+) -> Dict[str, Optional[Image.Image]]:
+    """Download all tiles concurrently. Returns {object_key: PIL.Image | None}."""
+    results: Dict[str, Optional[Image.Image]] = {}
+    total = len(tile_refs)
+    done = 0
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(download_tile_image, t.object_key): t for t in tile_refs}
+        for future in as_completed(futures):
+            tref = futures[future]
+            try:
+                results[tref.object_key] = future.result()
+            except Exception as exc:
+                print(f"[pipeline] Failed to download {tref.object_key}: {exc}")
+                results[tref.object_key] = None
+            done += 1
+            if done % 50 == 0 or done == total:
+                _report(progress_cb, done, total, f"Downloading tiles ({done}/{total})")
+
+    return results
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -97,24 +173,7 @@ def run_analysis(
     batch_size: int = 16,
     progress_cb: ProgressCallback = None,
 ) -> AnalysisResult:
-    """Run the full region-detection pipeline for *image_id*.
-
-    Parameters
-    ----------
-    image_id:
-        The image / dataset identifier in MinIO (the top-level prefix).
-    tile_level:
-        DZI pyramid level to analyse.  Defaults to
-        ``settings.DEFAULT_TILE_LEVEL``.
-    threshold:
-        Classification threshold for "Tumor" label.
-    tissue_threshold:
-        Minimum tissue ratio so a tile is analysed.
-    batch_size:
-        Number of tiles to embed at once (GPU batch).
-    progress_cb:
-        Optional ``(processed, total, message)`` callback for status updates.
-    """
+    """Run the full region-detection pipeline for *image_id*."""
     requested_tile_level = tile_level if tile_level is not None else settings.DEFAULT_TILE_LEVEL
     threshold = threshold if threshold is not None else settings.CLASSIFICATION_THRESHOLD
     tissue_thresh = (
@@ -129,7 +188,7 @@ def run_analysis(
     timings["parse_dzi_s"] = round(time.perf_counter() - t0, 3)
     _report(progress_cb, 0, 0, "Parsed DZI descriptor")
 
-    # ── 2. List tiles at the chosen level ─────────────────────────────
+    # ── 2. Resolve tile level ─────────────────────────────────────────
     t0 = time.perf_counter()
     available_levels = list_available_tile_levels(image_id)
     if not available_levels:
@@ -142,9 +201,7 @@ def run_analysis(
     )
     if tile_level != requested_tile_level:
         _report(
-            progress_cb,
-            0,
-            0,
+            progress_cb, 0, 0,
             f"Requested level {requested_tile_level} unavailable. Using level {tile_level}",
             tile_level,
         )
@@ -156,44 +213,89 @@ def run_analysis(
     _report(progress_cb, 0, total, f"Found {total} tiles at level {tile_level}", tile_level)
 
     if total == 0:
-        raise ValueError(
-            f"No tiles found for image_id={image_id} at level={tile_level}"
-        )
+        raise ValueError(f"No tiles found for image_id={image_id} at level={tile_level}")
 
-    # Determine grid dimensions from tile coordinates
+    # Grid dims and DZI shape
     max_x = max(t.x for t in tile_refs)
     max_y = max(t.y for t in tile_refs)
     grid_cols = max_x + 1
     grid_rows = max_y + 1
     max_level = max_dzi_level(DZIShape(width=dzi.width, height=dzi.height, tile_size=dzi.tile_size))
 
-    # ── 3. Download, detect tissue, embed, classify ───────────────────
+    # ── 3. Initialise models (singletons — fast after first call) ──────
     t0 = time.perf_counter()
-
-    # Initialise heavy models
-    embedder = Embedder()
-    classifier = Classifier()
-    classifier.load()
-
+    embedder = get_embedder()
+    classifier = get_classifier()
     timings["model_load_s"] = round(time.perf_counter() - t0, 3)
 
-    # Probability grid for heatmap (-1 = non-tissue)
-    prob_grid = np.full((grid_rows, grid_cols), -1.0)
+    # ── 4. Download all tiles in parallel ─────────────────────────────
+    _report(progress_cb, 0, total, "Downloading tiles…", tile_level)
+    t0 = time.perf_counter()
+    tile_images = _download_tiles_parallel(
+        tile_refs,
+        max_workers=settings.DOWNLOAD_WORKERS,
+        progress_cb=progress_cb,
+    )
+    timings["download_s"] = round(time.perf_counter() - t0, 3)
+    _report(progress_cb, 0, total, "Download complete, analysing tiles…", tile_level)
 
+    # ── 5. Tissue detection + embedding + classification ───────────────
+    t_analysis = time.perf_counter()
+    prob_grid = np.full((grid_rows, grid_cols), -1.0)
     predictions: List[TilePrediction] = []
     tissue_count = 0
     skipped_count = 0
     flagged_count = 0
 
-    # Process in batches for embedding efficiency
     batch_tiles: List[TileRef] = []
-    batch_images = []
+    batch_images: List[Image.Image] = []
     batch_tissue: List[TissueResult] = []
 
-    t_analysis = time.perf_counter()
+    def flush_batch() -> None:
+        nonlocal flagged_count
+        if not batch_images:
+            return
+        embeddings = embedder.embed_batch(batch_images, batch_size=len(batch_images))
+        cls_results = classifier.predict_batch(embeddings, threshold=threshold)
+        for bt, btr, cls_r in zip(batch_tiles, batch_tissue, cls_results):
+            prob_grid[bt.y, bt.x] = cls_r.tumor_probability
+            if cls_r.label == "Tumor":
+                flagged_count += 1
+            px, py, w, h = tile_rect_in_fullres(
+                shape=DZIShape(width=dzi.width, height=dzi.height, tile_size=dzi.tile_size),
+                tile_level=tile_level,
+                max_level=max_level,
+                tile_x=bt.x,
+                tile_y=bt.y,
+            )
+            predictions.append(
+                TilePrediction(
+                    tile_x=bt.x,
+                    tile_y=bt.y,
+                    tile_level=tile_level,
+                    pixel_x=px,
+                    pixel_y=py,
+                    width=w,
+                    height=h,
+                    is_tissue=True,
+                    tissue_ratio=btr.tissue_ratio,
+                    tumor_probability=cls_r.tumor_probability,
+                    label=cls_r.label,
+                )
+            )
+        batch_tiles.clear()
+        batch_images.clear()
+        batch_tissue.clear()
 
     for idx, tref in enumerate(tile_refs):
-        img = download_tile_image(tref.object_key)
+        img = tile_images.get(tref.object_key)
+        if img is None:
+            # Download failed; treat as skipped background tile
+            skipped_count += 1
+            if (idx + 1) % 20 == 0 or idx + 1 == total:
+                _report(progress_cb, idx + 1, total, "Analysing tiles", tile_level)
+            continue
+
         tissue = detect_tissue(img, threshold=tissue_thresh)
 
         if not tissue.is_tissue:
@@ -229,49 +331,15 @@ def run_analysis(
         batch_images.append(img)
         batch_tissue.append(tissue)
 
-        # Flush batch when full or last tile
         if len(batch_images) >= batch_size or idx + 1 == total:
-            if batch_images:
-                embeddings = embedder.embed_batch(batch_images, batch_size=len(batch_images))
-                cls_results = classifier.predict_batch(embeddings, threshold=threshold)
-
-                for bt, btr, cls_r in zip(batch_tiles, batch_tissue, cls_results):
-                    prob_grid[bt.y, bt.x] = cls_r.tumor_probability
-                    if cls_r.label == "Tumor":
-                        flagged_count += 1
-                    px, py, w, h = tile_rect_in_fullres(
-                        shape=DZIShape(width=dzi.width, height=dzi.height, tile_size=dzi.tile_size),
-                        tile_level=tile_level,
-                        max_level=max_level,
-                        tile_x=bt.x,
-                        tile_y=bt.y,
-                    )
-                    predictions.append(
-                        TilePrediction(
-                            tile_x=bt.x,
-                            tile_y=bt.y,
-                            tile_level=tile_level,
-                            pixel_x=px,
-                            pixel_y=py,
-                            width=w,
-                            height=h,
-                            is_tissue=True,
-                            tissue_ratio=btr.tissue_ratio,
-                            tumor_probability=cls_r.tumor_probability,
-                            label=cls_r.label,
-                        )
-                    )
-
-                batch_tiles.clear()
-                batch_images.clear()
-                batch_tissue.clear()
+            flush_batch()
 
         if (idx + 1) % 20 == 0 or idx + 1 == total:
             _report(progress_cb, idx + 1, total, "Analysing tiles", tile_level)
 
     timings["analysis_s"] = round(time.perf_counter() - t_analysis, 3)
 
-    # ── 4. Aggregate ──────────────────────────────────────────────────
+    # ── 6. Aggregate ──────────────────────────────────────────────────
     tissue_probs = [p.tumor_probability for p in predictions if p.is_tissue]
     agg_score = float(np.mean(tissue_probs)) if tissue_probs else 0.0
     max_score = float(np.max(tissue_probs)) if tissue_probs else 0.0
@@ -289,7 +357,7 @@ def run_analysis(
         threshold=threshold,
     )
 
-    # ── 5. Heatmap ────────────────────────────────────────────────────
+    # ── 7. Heatmap ────────────────────────────────────────────────────
     t0 = time.perf_counter()
     _report(progress_cb, total, total, "Generating heatmap", tile_level)
     heatmap_img = generate_heatmap(prob_grid, tile_size=dzi.tile_size)
