@@ -30,6 +30,7 @@ const TileViewerPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const initialisedRef = useRef(false);
   const searchGroupRef = useRef<HTMLDivElement | null>(null);
@@ -141,9 +142,11 @@ const TileViewerPage: React.FC = () => {
   useEffect(() => {
     if (!searchTerm) {
       setSearchResults([]);
+      setIsSearching(false);
       return;
     }
 
+    setIsSearching(true);
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
@@ -161,6 +164,8 @@ const TileViewerPage: React.FC = () => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
           setErrorMessage('Unable to search datasets.');
         }
+      } finally {
+        setIsSearching(false);
       }
     }, 250);
 
@@ -342,6 +347,16 @@ const TileViewerPage: React.FC = () => {
               Load
             </button>
           </div>
+          {showSuggestions && searchTerm && isSearching && (
+            <ul className="tile-viewer-page__suggestions" role="listbox">
+              <li className="tile-viewer-page__search-loading">Searching…</li>
+            </ul>
+          )}
+          {showSuggestions && searchTerm && !isSearching && suggestions.length === 0 && !isLoading && (
+            <ul className="tile-viewer-page__suggestions" role="listbox">
+              <li className="tile-viewer-page__search-loading">No datasets found for "{searchTerm}"</li>
+            </ul>
+          )}
           {showSuggestions && suggestions.length > 0 && (
             <ul className="tile-viewer-page__suggestions" role="listbox">
               {suggestions.map(dataset => (
@@ -370,6 +385,9 @@ const TileViewerPage: React.FC = () => {
               <span className="tile-viewer-page__status">
                 Showing latest {featuredDatasets.length} dataset{featuredDatasets.length > 1 ? 's' : ''}
               </span>
+            )}
+            {!isLoading && featuredDatasets.length === 0 && !searchTerm && !errorMessage && (
+              <span className="tile-viewer-page__status">No datasets available yet</span>
             )}
             {isAnalyzing && analysisProgress && (
               <span className="tile-viewer-page__status tile-viewer-page__status--processing">

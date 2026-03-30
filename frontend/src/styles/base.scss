@@ -1,7 +1,37 @@
-$main-bg: #14213d;
-$text-color: #fff;
+:root {
+  // Core palette
+  --color-bg: #f4f6fb;
+  --color-surface: #ffffff;
+  --color-nav: #0b1526;
+  --color-text: #0b1526;
+  --color-text-muted: rgba(11, 21, 38, 0.5);
+  --color-border: rgba(11, 21, 38, 0.08);
+
+  // Brand accent
+  --color-accent: #fca311;
+  --color-accent-hover: #e8930a;
+  --color-accent-text: #0b1526;
+
+  // Semantic colors
+  --color-error: #dc2626;
+  --color-success: #16a34a;
+
+  // Aliases used in existing SCSS
+  --main-bg: var(--color-bg);
+  --text-inverse: #f3f8fb;
+  --shadow-strong: 0 20px 60px -30px rgba(11, 21, 38, 0.35);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 body {
-  color: $text-color;
-  background: $main-bg;
+  margin: 0;
+  color: var(--color-text);
+  background: var(--color-bg);
+  font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }

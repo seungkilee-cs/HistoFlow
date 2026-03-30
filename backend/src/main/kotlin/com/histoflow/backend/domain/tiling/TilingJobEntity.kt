@@ -7,7 +7,6 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
-import jakarta.persistence.Lob
 import jakarta.persistence.PrePersist
 import jakarta.persistence.PreUpdate
 import jakarta.persistence.Table
@@ -47,8 +46,7 @@ class TilingJobEntity(
     @Column(nullable = true)
     var stageProgressPercent: Int? = null,
 
-    @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "text")
     var activityEntriesJson: String = "[]",
 
     @Column(nullable = false)

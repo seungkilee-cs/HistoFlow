@@ -61,11 +61,7 @@ class AnalysisController(
     @GetMapping("/heatmap/{jobId}")
     fun getHeatmap(@PathVariable jobId: String): ResponseEntity<Any> {
         return try {
-            val results = analysisService.getResults(jobId)
-            val heatmapKey = results.heatmapKey
-                ?: return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(mapOf("error" to "No heatmap key available for job $jobId"))
-
+            val heatmapKey = analysisService.getHeatmapKey(jobId)
             val body = InputStreamResource(analysisService.getHeatmapObject(heatmapKey))
 
             ResponseEntity.ok()
@@ -78,6 +74,16 @@ class AnalysisController(
                 logger.error("Heatmap retrieval failed for job {}: {}", jobId, e.message)
             }
             ResponseEntity.status(status).body(mapOf("error" to e.message))
+        }
+    }
+
+    @GetMapping("/image/{imageId}")
+    fun getAnalysisByImageId(@PathVariable imageId: String): ResponseEntity<*> {
+        return try {
+            ResponseEntity.ok(analysisService.getAnalysisByImageId(imageId))
+        } catch (e: Exception) {
+            logger.error("Failed to get analysis history for image {}: {}", imageId, e.message)
+            ResponseEntity.internalServerError().body(mapOf("error" to e.message))
         }
     }
 }

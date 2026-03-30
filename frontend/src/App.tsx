@@ -9,19 +9,10 @@ function App() {
     <Router>
       <JobsProvider>
         <div className="App">
-          <nav style={{
-            padding: '20px',
-            backgroundColor: '#2c3e50',
-            color: 'white',
-            display: 'flex',
-            gap: '20px'
-          }}>
-            <Link to="/" style={{ color: 'white', textDecoration: 'none', fontSize: '18px' }}>
-              Home
-            </Link>
-            <Link to="/tile-viewer" style={{ color: 'white', textDecoration: 'none', fontSize: '18px' }}>
-              Tile Viewer
-            </Link>
+          <nav className="app-nav">
+            <Link to="/" className="app-nav__brand">Histo<span>Flow</span></Link>
+            <Link to="/" className="app-nav__link">Home</Link>
+            <Link to="/tile-viewer" className="app-nav__link">Tile Viewer</Link>
           </nav>
 
           <Routes>

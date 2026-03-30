@@ -3,6 +3,9 @@ package com.histoflow.backend.service
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.histoflow.backend.config.AnalysisProperties
 import com.histoflow.backend.config.MinioProperties
+import com.histoflow.backend.domain.analysis.AnalysisJobEntity
+import com.histoflow.backend.domain.analysis.AnalysisJobStatus
+import com.histoflow.backend.repository.analysis.AnalysisJobRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpStatusCodeException
@@ -17,7 +20,8 @@ class AnalysisService(
     private val restTemplate: RestTemplate,
     private val analysisProperties: AnalysisProperties,
     private val s3Client: S3Client,
-    private val minioProperties: MinioProperties
+    private val minioProperties: MinioProperties,
+    private val analysisJobRepository: AnalysisJobRepository
 ) {
     private val logger = LoggerFactory.getLogger(AnalysisService::class.java)
 
@@ -140,6 +144,20 @@ class AnalysisService(
             if (response == null) {
                 throw AnalysisProxyException(502, "Empty response from analysis service")
             }
+
+            // Save initial PROCESSING row to DB
+            analysisJobRepository.save(
+                AnalysisJobEntity(
+                    jobId = response.job_id,
+                    imageId = imageId,
+                    status = AnalysisJobStatus.PROCESSING,
+                    tileLevel = tileLevel,
+                    threshold = threshold,
+                    tissueThreshold = tissueThreshold
+                )
+            )
+            logger.info("Saved analysis job {} to DB for image {}", response.job_id, imageId)
+
             return response
         } catch (e: HttpStatusCodeException) {
             throw toProxyException("trigger", e)
@@ -158,6 +176,21 @@ class AnalysisService(
             if (response == null) {
                 throw AnalysisProxyException(502, "Empty status response from analysis service")
             }
+
+            // Update progress and failure state in DB (only while still PROCESSING)
+            analysisJobRepository.findByJobId(jobId).ifPresent { entity ->
+                if (entity.status == AnalysisJobStatus.PROCESSING) {
+                    entity.tilesProcessed = response.tilesProcessed
+                    entity.totalTiles = response.totalTiles
+                    if (response.tileLevel != null) entity.tileLevel = response.tileLevel
+                    if (response.status == "failed") {
+                        entity.status = AnalysisJobStatus.FAILED
+                        entity.errorMessage = response.message
+                    }
+                    analysisJobRepository.save(entity)
+                }
+            }
+
             return response
         } catch (e: HttpStatusCodeException) {
             throw toProxyException("status", e)
@@ -176,6 +209,23 @@ class AnalysisService(
             if (response == null) {
                 throw AnalysisProxyException(502, "Empty results response from analysis service")
             }
+
+            // Update DB row with completed state and summary stats
+            analysisJobRepository.findByJobId(jobId).ifPresent { entity ->
+                entity.status = AnalysisJobStatus.COMPLETED
+                entity.tileLevel = response.tileLevel
+                entity.heatmapKey = response.heatmapKey
+                response.summary?.let { summary ->
+                    entity.tumorAreaPercentage = summary.tumorAreaPercentage
+                    entity.aggregateScore = summary.aggregateScore
+                    entity.maxScore = summary.maxScore
+                    entity.totalTiles = summary.totalTiles
+                    entity.tilesProcessed = summary.tissueTiles
+                }
+                analysisJobRepository.save(entity)
+                logger.info("Updated job {} to COMPLETED in DB", jobId)
+            }
+
             return response
         } catch (e: HttpStatusCodeException) {
             throw toProxyException("results", e)
@@ -185,6 +235,58 @@ class AnalysisService(
             logger.error("Failed to get analysis results for job {}: {}", jobId, e.message)
             throw AnalysisProxyException(502, "Failed to reach analysis service: ${e.message}")
         }
+    }
+
+    data class AnalysisJobSummary(
+        val jobId: String,
+        val imageId: String,
+        val status: String,
+        val tileLevel: Int?,
+        val threshold: Float?,
+        val tissueThreshold: Float?,
+        val tilesProcessed: Int,
+        val totalTiles: Int,
+        val heatmapKey: String?,
+        val tumorAreaPercentage: Double?,
+        val aggregateScore: Double?,
+        val maxScore: Double?,
+        val errorMessage: String?,
+        val createdAt: String,
+        val updatedAt: String
+    )
+
+    fun getHeatmapKey(jobId: String): String {
+        val entity = analysisJobRepository.findByJobId(jobId).orElse(null)
+        if (entity?.heatmapKey != null) {
+            return entity.heatmapKey!!
+        }
+        // Fall back to live service if not yet persisted
+        return getResults(jobId).heatmapKey
+            ?: throw AnalysisProxyException(404, "No heatmap key available for job $jobId")
+    }
+
+    fun getAnalysisByImageId(imageId: String): List<AnalysisJobSummary> {
+        return analysisJobRepository.findAllByImageId(imageId)
+            .sortedByDescending { it.createdAt }
+            .map { entity ->
+                AnalysisJobSummary(
+                    jobId = entity.jobId,
+                    imageId = entity.imageId,
+                    status = entity.status.name,
+                    tileLevel = entity.tileLevel,
+                    threshold = entity.threshold,
+                    tissueThreshold = entity.tissueThreshold,
+                    tilesProcessed = entity.tilesProcessed,
+                    totalTiles = entity.totalTiles,
+                    heatmapKey = entity.heatmapKey,
+                    tumorAreaPercentage = entity.tumorAreaPercentage,
+                    aggregateScore = entity.aggregateScore,
+                    maxScore = entity.maxScore,
+                    errorMessage = entity.errorMessage,
+                    createdAt = entity.createdAt.toString(),
+                    updatedAt = entity.updatedAt.toString()
+                )
+            }
     }
 
     fun getHeatmapObject(heatmapKey: String): InputStream {

@@ -6,8 +6,6 @@ import { useJobs } from '../jobs/JobsContext';
 function HomePage() {
   const { jobs, startLocalUpload, updateLocalUploadProgress, attachServerJob, failLocalUpload } = useJobs();
   const [_image, setImage] = useState<File | null>(null);
-  // Likely won't be needed as real images are to big. Just here for testing
-  const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState<number>(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -34,11 +32,11 @@ function HomePage() {
     }
 
     if (activeJob.status === 'LOCAL_UPLOADING') {
-      return `Uploading original slide to object storage... ${localUploadProgress ?? 0}%`;
+      return 'Uploading original slide to object storage...';
     }
 
     if (backendProgress !== null) {
-      return `${activeJob.message ?? 'Uploading generated tiles to object storage.'} ${backendProgress}%`;
+      return activeJob.message ?? 'Uploading generated tiles to object storage.';
     }
 
     return activeJob.message ?? null;
@@ -62,8 +60,6 @@ function HomePage() {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
       setImage(file);
-      setPreview(URL.createObjectURL(file));
-      // kick off upload
       startUpload(file);
     }
   };
@@ -76,8 +72,6 @@ function HomePage() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setImage(file);
-      setPreview(URL.createObjectURL(file));
-      // kick off upload
       startUpload(file);
     }
   };
@@ -147,33 +141,33 @@ function HomePage() {
           style={{ display: 'none' }}
           onChange={handleFileChange}
         />
-        {preview && (
-          <div className="preview-container">
-            <img
-              src={preview}
-              alt="Preview"
-              className="preview-image"
-            />
-          </div>
-        )}
-
         {statusText && (
           <div className="upload-status" aria-live="polite">
             <div className="upload-status__message">{statusText}</div>
             {localUploadProgress !== null && (
               <div className="upload-progress">
-                <div className="upload-progress__track">
-                  <div className="upload-progress__fill" style={{ width: `${localUploadProgress}%` }} />
+                <div className="upload-progress__label-row">
+                  <span>Uploading to storage</span>
+                  <span>{localUploadProgress}%</span>
                 </div>
-                <span className="upload-progress__label">{localUploadProgress}%</span>
+                <div className="upload-progress__bar-row">
+                  <div className="upload-progress__track">
+                    <div className="upload-progress__fill" style={{ width: `${localUploadProgress}%` }} />
+                  </div>
+                </div>
               </div>
             )}
             {backendProgress !== null && (
               <div className="upload-progress upload-progress--backend">
-                <div className="upload-progress__track">
-                  <div className="upload-progress__fill" style={{ width: `${backendProgress}%` }} />
+                <div className="upload-progress__label-row">
+                  <span>Processing tiles</span>
+                  <span>{backendProgress}%</span>
                 </div>
-                <span className="upload-progress__label">{backendProgress}%</span>
+                <div className="upload-progress__bar-row">
+                  <div className="upload-progress__track">
+                    <div className="upload-progress__fill" style={{ width: `${backendProgress}%` }} />
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -201,10 +195,9 @@ function HomePage() {
             </ol>
           </section>
         )}
-        {/* Error message */}
         {uploadError && (
-          <div style={{ marginTop: '1rem', color: '#ff6b6b' }}>
-            Error: {uploadError}
+          <div className="upload-error">
+            {uploadError}
           </div>
         )}
       </div>

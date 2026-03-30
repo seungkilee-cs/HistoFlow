@@ -13,7 +13,7 @@ class WebConfig : WebMvcConfigurer {
                 "http://localhost:5173",  // Vite default port
                 "http://localhost:3000"   // Alternative port
             )
-            .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+            .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD")
             .allowedHeaders("*")
             .allowCredentials(false)
             .maxAge(3600)
