@@ -248,16 +248,10 @@ const TileViewerPage: React.FC = () => {
       setAnalysisPredictions(Array.isArray(data.tile_predictions) ? data.tile_predictions : []);
       if (data.summary) setAnalysisSummary(data.summary);
 
-      const candidateUrl = `${API_BASE_URL}/api/v1/analysis/heatmap/${jobId}`;
-      try {
-        const headRes = await fetch(candidateUrl, { method: 'HEAD' });
-        if (headRes.ok) {
-          setHeatmapUrl(candidateUrl);
-        } else {
-          setHeatmapWarning('Heatmap unavailable. Showing region boxes only.');
-        }
-      } catch {
-        setHeatmapWarning('Unable to load heatmap. Showing region boxes only.');
+      if (data.heatmap_key) {
+        setHeatmapUrl(`${API_BASE_URL}/api/v1/analysis/heatmap/${jobId}`);
+      } else {
+        setHeatmapWarning('Heatmap unavailable. Showing region boxes only.');
       }
       setIsAnalyzing(false);
     } catch {

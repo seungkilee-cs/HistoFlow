@@ -37,7 +37,7 @@ from .classifier import Classifier
 from .config import settings
 from .embedder import Embedder
 from .geometry import DZIShape, max_dzi_level, tile_rect_in_fullres
-from .heatmap import generate_heatmap, heatmap_to_png_bytes
+from .heatmap import TileCell, generate_heatmap, heatmap_to_png_bytes
 from .minio_io import (
     TileRef,
     download_tile_image,
@@ -247,6 +247,10 @@ def run_analysis(
     skipped_count = 0
     flagged_count = 0
 
+    # Track soft-skipped tiles (download succeeded but tissue check failed).
+    # Used for auto-fallback when zero tiles pass tissue detection.
+    soft_skipped: List[Tuple[TileRef, Image.Image]] = []
+
     batch_tiles: List[TileRef] = []
     batch_images: List[Image.Image] = []
     batch_tissue: List[TissueResult] = []
@@ -300,6 +304,7 @@ def run_analysis(
 
         if not tissue.is_tissue:
             skipped_count += 1
+            soft_skipped.append((tref, img))
             px, py, w, h = tile_rect_in_fullres(
                 shape=DZIShape(width=dzi.width, height=dzi.height, tile_size=dzi.tile_size),
                 tile_level=tile_level,
@@ -337,6 +342,53 @@ def run_analysis(
         if (idx + 1) % 20 == 0 or idx + 1 == total:
             _report(progress_cb, idx + 1, total, "Analysing tiles", tile_level)
 
+    # ── Auto-fallback for non-pathology / non-H&E images ─────────────
+    # When the H&E saturation check (and variance fallback) reject everything,
+    # it means the image is truly uniform-looking at the tile level.  Force
+    # all successfully-downloaded tiles through inference so the heatmap is
+    # always meaningful.
+    if tissue_count == 0 and soft_skipped:
+        print(
+            f"[pipeline] WARNING: 0 content tiles detected for {image_id} "
+            f"(all {len(soft_skipped)} tiles failed tissue/content check). "
+            "Falling back to forced inference on all non-blank tiles."
+        )
+        _report(progress_cb, 0, total, "Retrying with forced content detection…", tile_level)
+
+        # Clear the background predictions written above — we will re-classify
+        # these tiles properly and update prob_grid.
+        predictions = [p for p in predictions if p.label != "Background"]
+        skipped_count = total - sum(
+            1 for t in tile_refs if tile_images.get(t.object_key) is None
+        )
+
+        for idx, (tref, img) in enumerate(soft_skipped):
+            # Use variance-only detection with a very permissive threshold so
+            # only truly blank (solid-colour) tiles are skipped.
+            content = detect_tissue(img, threshold=0.0, variance_fallback=True, std_floor=3.0)
+            if not content.is_tissue:
+                continue
+
+            tissue_count += 1
+            skipped_count -= 1
+            batch_tiles.append(tref)
+            batch_images.append(img)
+            batch_tissue.append(content)
+
+            if len(batch_images) >= batch_size or idx + 1 == len(soft_skipped):
+                flush_batch()
+
+            if (idx + 1) % 20 == 0 or idx + 1 == len(soft_skipped):
+                _report(
+                    progress_cb,
+                    idx + 1,
+                    len(soft_skipped),
+                    "Forced content analysis",
+                    tile_level,
+                )
+
+        flush_batch()
+
     timings["analysis_s"] = round(time.perf_counter() - t_analysis, 3)
 
     # ── 6. Aggregate ──────────────────────────────────────────────────
@@ -360,7 +412,27 @@ def run_analysis(
     # ── 7. Heatmap ────────────────────────────────────────────────────
     t0 = time.perf_counter()
     _report(progress_cb, total, total, "Generating heatmap", tile_level)
-    heatmap_img = generate_heatmap(prob_grid, tile_size=dzi.tile_size)
+
+    # Build TileCell list from predictions so the heatmap uses the same
+    # full-resolution pixel coordinates as the region-box overlays.
+    tile_cells = [
+        TileCell(
+            pixel_x=p.pixel_x,
+            pixel_y=p.pixel_y,
+            width=p.width,
+            height=p.height,
+            tumor_probability=p.tumor_probability if p.is_tissue else -1.0,
+        )
+        for p in predictions
+    ]
+
+    heatmap_img = generate_heatmap(
+        prob_grid,
+        tile_size=dzi.tile_size,
+        image_width=dzi.width,
+        image_height=dzi.height,
+        tile_cells=tile_cells,
+    )
     heatmap_bytes = heatmap_to_png_bytes(heatmap_img)
     heatmap_key = f"{image_id}/heatmap_level_{tile_level}.png"
     upload_bytes(heatmap_bytes, heatmap_key, content_type="image/png")

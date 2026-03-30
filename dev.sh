@@ -110,9 +110,7 @@ if [ "$WITH_ML" = true ]; then
   PROFILES+=(--profile cpu)
 fi
 
-docker compose "${COMPOSE_FILES[@]}" "${PROFILES[@]}" up -d --build 2>&1 \
-  | grep -E "built|pulled|started|healthy|error|Error" \
-  || true
+docker compose "${COMPOSE_FILES[@]}" "${PROFILES[@]}" up -d --build 2>&1 || true
 
 ok "Docker services started"
 
@@ -154,10 +152,10 @@ wait_port() {
 echo ""
 log "Waiting for services"
 
-wait_port "PostgreSQL :5432"    localhost 5432  40
-wait_http  "MinIO :9000"        "http://localhost:9000/minio/health/live"  40
-wait_port  "Backend :8080"      localhost 8080  60
-wait_http  "Tiling svc :8000"   "http://localhost:8000/health"             40
+wait_port "PostgreSQL :5432"    localhost 5432  120
+wait_http  "MinIO :9000"        "http://localhost:9000/minio/health/live"  120
+wait_port  "Backend :8080"      localhost 8080  180
+wait_http  "Tiling svc :8000"   "http://localhost:8000/health"             120
 
 if [ "$WITH_ML" = true ]; then
   echo ""
