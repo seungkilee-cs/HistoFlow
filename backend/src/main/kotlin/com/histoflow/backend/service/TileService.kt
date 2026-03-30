@@ -23,6 +23,10 @@ class TileService(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
+    companion object {
+        private val UUID_REGEX = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+    }
+
     /**
      * Fetch DZI descriptor XML file from MinIO
      * MinIO path: {imageId}/image.dzi
@@ -110,14 +114,16 @@ class TileService(
         val originalQuery = prefix?.trim()?.takeIf { it.isNotEmpty() }
         val searchTerm = originalQuery?.lowercase()
 
-        val aggregated = mutableMapOf<String, DatasetAccumulator>()
-
+        // Use delimiter listing to discover dataset IDs in O(datasets) instead of O(tiles).
+        // S3 returns top-level "folders" as commonPrefixes without scanning every tile file.
+        val datasetIds = mutableListOf<String>()
         var token = continuationToken
         var nextToken: String? = null
 
         while (true) {
             val requestBuilder = ListObjectsV2Request.builder()
                 .bucket(minioProps.buckets.tiles)
+                .delimiter("/")
                 .maxKeys(1000)
 
             if (!token.isNullOrBlank()) {
@@ -128,71 +134,34 @@ class TileService(
                 s3Client.listObjectsV2(requestBuilder.build())
             } catch (_: NoSuchBucketException) {
                 logger.warn("Tiles bucket '{}' does not exist yet; returning empty dataset page", minioProps.buckets.tiles)
-                return DatasetPage(
-                    datasets = emptyList(),
-                    nextContinuationToken = null,
-                    appliedPrefix = originalQuery.orEmpty()
-                )
+                return DatasetPage(datasets = emptyList(), nextContinuationToken = null, appliedPrefix = originalQuery.orEmpty())
             }
 
-            response.contents()
-                .asSequence()
-                .mapNotNull { obj ->
-                    val key = obj.key()
-                    val datasetId = key.substringBefore('/', "")
-                    if (datasetId.isBlank()) {
-                        null
-                    } else {
-                        datasetId to obj
-                    }
-                }
-                .forEach { (datasetId, obj) ->
-                    val accumulator = aggregated.getOrPut(datasetId) { DatasetAccumulator() }
-                    accumulator.totalObjects += 1
-                    accumulator.totalSizeBytes += obj.size()
-                    accumulator.lastModifiedMillis = maxOf(accumulator.lastModifiedMillis, obj.lastModified().toEpochMilli())
-                }
+            response.commonPrefixes()
+                .mapNotNull { it.prefix()?.trimEnd('/') }
+                .filter { it.isNotBlank() && UUID_REGEX.matches(it) }
+                .forEach { datasetIds.add(it) }
 
-            aggregated.forEach { (datasetId, accumulator) ->
-                if (!accumulator.metadataLoaded) {
-                    accumulator.datasetName = loadDatasetName(datasetId) ?: datasetId
-                    accumulator.metadataLoaded = true
-                }
-                accumulator.matchesQuery = matchesSearch(datasetId, accumulator.datasetName, searchTerm)
-            }
-
-            val matchedCount = aggregated.count { it.value.matchesQuery }
             val isTruncated = response.isTruncated
-            val candidateNext = response.nextContinuationToken()
+            nextToken = response.nextContinuationToken()
 
-            val shouldContinue = when {
-                !isTruncated -> false
-                searchTerm == null -> aggregated.size < sanitizedLimit
-                else -> matchedCount < sanitizedLimit
-            }
+            if (!isTruncated) break
+            if (searchTerm == null && datasetIds.size >= sanitizedLimit) break
 
-            if (!shouldContinue) {
-                nextToken = candidateNext
-                break
-            }
-
-            if (candidateNext.isNullOrBlank()) {
-                nextToken = null
-                break
-            }
-
-            token = candidateNext
+            token = nextToken
         }
 
-        val summaries = aggregated
-            .filter { (_, accumulator) -> searchTerm == null || accumulator.matchesQuery }
-            .map { (imageId, accumulator) ->
+        val summaries = datasetIds
+            .mapNotNull { datasetId ->
+                val meta = loadDatasetMetadata(datasetId)
+                val datasetName = meta?.datasetName?.takeIf { it.isNotBlank() } ?: datasetId
+                if (searchTerm != null && !matchesSearch(datasetId, datasetName, searchTerm)) return@mapNotNull null
                 DatasetSummary(
-                    imageId = imageId,
-                    datasetName = accumulator.datasetName ?: imageId,
-                    totalObjects = accumulator.totalObjects,
-                    totalSizeBytes = accumulator.totalSizeBytes,
-                    lastModifiedMillis = accumulator.lastModifiedMillis
+                    imageId = datasetId,
+                    datasetName = datasetName,
+                    totalObjects = meta?.tileFileCount?.toLong() ?: 0L,
+                    totalSizeBytes = meta?.tileTotalSizeBytes ?: 0L,
+                    lastModifiedMillis = meta?.generatedAt?.let { parseGeneratedAt(it) } ?: 0L
                 )
             }
             .sortedByDescending { it.lastModifiedMillis }
@@ -200,12 +169,12 @@ class TileService(
 
         return DatasetPage(
             datasets = summaries,
-            nextContinuationToken = nextToken,
+            nextContinuationToken = if (datasetIds.size >= sanitizedLimit) nextToken else null,
             appliedPrefix = originalQuery.orEmpty()
         )
     }
 
-    private fun loadDatasetName(imageId: String): String? {
+    private fun loadDatasetMetadata(imageId: String): TileMetadata? {
         val metadataKey = "$imageId/metadata.json"
         return try {
             s3Client.getObject(
@@ -213,16 +182,21 @@ class TileService(
                     .bucket(minioProps.buckets.tiles)
                     .key(metadataKey)
                     .build()
-            ).use { input ->
-                val metadata = objectMapper.readValue(input, TileMetadata::class.java)
-                metadata.datasetName?.takeIf { it.isNotBlank() }
-            }
+            ).use { input -> objectMapper.readValue(input, TileMetadata::class.java) }
         } catch (_: NoSuchKeyException) {
             logger.debug("Metadata not found for imageId={}", imageId)
             null
         } catch (e: Exception) {
             logger.warn("Failed to read metadata for imageId={}", imageId, e)
             null
+        }
+    }
+
+    private fun parseGeneratedAt(value: String): Long {
+        return try {
+            java.time.OffsetDateTime.parse(value).toInstant().toEpochMilli()
+        } catch (_: Exception) {
+            0L
         }
     }
 
@@ -260,17 +234,15 @@ data class TilingStatus(
     val message: String? = null
 )
 
-private data class DatasetAccumulator(
-    var totalObjects: Long = 0,
-    var totalSizeBytes: Long = 0,
-    var lastModifiedMillis: Long = 0,
-    var datasetName: String? = null,
-    var metadataLoaded: Boolean = false,
-    var matchesQuery: Boolean = true
-)
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 private data class TileMetadata(
     @JsonProperty("dataset_name")
-    val datasetName: String?
+    val datasetName: String?,
+    @JsonProperty("tile_file_count")
+    val tileFileCount: Int?,
+    @JsonProperty("tile_total_size_bytes")
+    val tileTotalSizeBytes: Long?,
+    @JsonProperty("generated_at")
+    val generatedAt: String?
 )
