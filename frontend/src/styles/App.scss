@@ -1,25 +1,95 @@
-@import url('https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap');
-
-.App {
-  text-align: center;
-}
-
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-.App-header {
-  background-color: #282c34;
+.app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
 }
 
-.App-link {
-  color: #61dafb;
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Nav ── */
+.app-nav {
+  height: var(--nav-h);
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.app-nav__brand {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  flex-shrink: 0;
+
+  &:hover {
+    color: var(--text);
+  }
+}
+
+.app-nav__brand-accent {
+  color: var(--accent);
+}
+
+.app-nav__links {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+}
+
+.app-nav__link {
+  padding: 6px 13px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color 0.15s, background 0.15s;
+
+  &:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  &.active {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.app-nav__status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.app-nav__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  &--live {
+    background: var(--success);
+    box-shadow: 0 0 5px var(--success);
+  }
+
+  &--polling {
+    background: var(--warning);
+  }
+
+  &--connecting {
+    background: var(--text-dim);
+  }
 }

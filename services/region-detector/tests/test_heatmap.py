@@ -25,12 +25,26 @@ class TestHeatmap:
         img = generate_heatmap(grid, tile_size=256, upscale=True)
         assert img.size == (512, 512)
 
-    def test_non_tissue_is_transparent(self):
-        """Cells with value -1 should be fully transparent."""
+    def test_non_tissue_is_transparent_when_skipped_alpha_zero(self):
+        """Cells with value -1 are fully transparent when skipped_alpha=0."""
         grid = np.array([[-1.0]])
-        img = generate_heatmap(grid, upscale=False)
+        img = generate_heatmap(grid, upscale=False, skipped_alpha=0)
         px = img.getpixel((0, 0))
         assert px[3] == 0  # alpha channel
+
+    def test_non_tissue_shows_grey_tint_by_default(self):
+        """Skipped cells render as a subtle grey tint with the default skipped_alpha."""
+        grid = np.array([[-1.0]])
+        img = generate_heatmap(grid, upscale=False)
+        r, g, b, a = img.getpixel((0, 0))
+        assert a == 25            # default skipped_alpha
+        assert r == g == b == 128  # neutral grey
+
+    def test_skipped_alpha_custom(self):
+        """skipped_alpha controls opacity of non-tissue cells."""
+        grid = np.array([[-1.0]])
+        img = generate_heatmap(grid, upscale=False, skipped_alpha=80)
+        assert img.getpixel((0, 0))[3] == 80
 
     def test_tissue_is_opaque(self):
         """Cells with a probability value should have non-zero alpha."""

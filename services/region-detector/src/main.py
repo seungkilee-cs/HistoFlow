@@ -10,9 +10,9 @@ GET  /health            Health-check
 
 from __future__ import annotations
 
-import uuid
 import threading
 import traceback
+import uuid
 from dataclasses import asdict
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -21,18 +21,27 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from .config import settings
-from .pipeline import AnalysisResult, run_analysis
+from .pipeline import AnalysisResult, preload_models, run_analysis
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="HistoFlow Region Detector",
     description="Tile-level tumour probability analysis with heatmap overlay generation.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
-# ── In-memory job store (prototype) ──────────────────────────────────────────
+@app.on_event("startup")
+async def startup_event() -> None:
+    """Pre-load ML models so the first analysis job starts immediately."""
+    print("[startup] Pre-loading ML models into memory…")
+    preload_models()
+    print("[startup] Models ready.")
+
+
+# ── In-memory job store ───────────────────────────────────────────────────────
+
 
 class JobStatus(str, Enum):
     ACCEPTED = "accepted"
@@ -85,7 +94,7 @@ class JobState:
 _jobs: Dict[str, JobState] = {}
 
 
-# ── Request / Response models ────────────────────────────────────────────────
+# ── Request / Response models ─────────────────────────────────────────────────
 
 
 class AnalyzeRequest(BaseModel):
@@ -102,7 +111,7 @@ class AnalyzeResponse(BaseModel):
     message: str
 
 
-# ── Background worker ────────────────────────────────────────────────────────
+# ── Background worker ─────────────────────────────────────────────────────────
 
 
 def _run_job(job_id: str, req: AnalyzeRequest) -> None:
@@ -117,7 +126,6 @@ def _run_job(job_id: str, req: AnalyzeRequest) -> None:
             progress_cb=state.update_progress,
         )
 
-        # Serialise for the results endpoint
         tile_dicts = [asdict(tp) for tp in result.tile_predictions]
         state.result = {
             "image_id": result.image_id,
@@ -144,7 +152,7 @@ def _run_job(job_id: str, req: AnalyzeRequest) -> None:
 
 @app.post("/jobs/analyze", response_model=AnalyzeResponse)
 async def submit_analysis(req: AnalyzeRequest, background_tasks: BackgroundTasks):
-    """Submit a region-detection job.  Returns immediately."""
+    """Submit a region-detection job. Returns immediately."""
     job_id = str(uuid.uuid4())
     state = JobState(
         image_id=req.image_id,
@@ -152,9 +160,7 @@ async def submit_analysis(req: AnalyzeRequest, background_tasks: BackgroundTasks
         threshold=req.threshold or 0.5,
     )
     _jobs[job_id] = state
-
     background_tasks.add_task(_run_job, job_id, req)
-
     return AnalyzeResponse(
         job_id=job_id,
         status="accepted",
@@ -186,7 +192,7 @@ async def get_results(job_id: str):
             status_code=202,
             detail={
                 "status": state.status.value,
-                "message": "Analysis is still in progress.  Poll /status to track.",
+                "message": "Analysis is still in progress. Poll /status to track.",
                 "tiles_processed": state.tiles_processed,
                 "total_tiles": state.total_tiles,
             },

@@ -106,10 +106,21 @@ const ImageViewer: React.FC<ImageViewerProps> = ({
       heatmapImage.alt = 'Analysis heatmap overlay';
       heatmapImage.style.opacity = heatmapOpacity.toString();
       heatmapImage.style.pointerEvents = 'none';
+      // Keep cell boundaries sharp when the small heatmap PNG is scaled up
+      heatmapImage.style.imageRendering = 'pixelated';
+
+      // Use the actual image bounds in viewport space rather than the
+      // unit square (0,0,1,1). For landscape images the image height in
+      // viewport coords is height/width, so Rect(0,0,1,1) overshoots the
+      // bottom edge and paints the heatmap over the black background area.
+      const tiledImage = viewer.world.getItemAt(0);
+      const bounds = tiledImage
+        ? tiledImage.getBounds()
+        : new OpenSeadragon.Rect(0, 0, 1, 1);
 
       viewer.addOverlay({
         element: heatmapImage,
-        location: new OpenSeadragon.Rect(0, 0, 1, 1)
+        location: bounds
       });
     }
 
