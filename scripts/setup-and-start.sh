@@ -14,6 +14,7 @@ MODEL_PATH="$PROJECT_ROOT/services/justin-regression/models/dinov2_classifier.pk
 TILING_ENV="$PROJECT_ROOT/services/tiling/.env"
 TILING_ENV_EXAMPLE="$PROJECT_ROOT/services/tiling/.env.example"
 REGION_TEST_PYTEST="$PROJECT_ROOT/services/region-detector/venv/bin/pytest"
+RUNTIME_PORTS_LIB="$PROJECT_ROOT/scripts/lib/runtime-ports.sh"
 
 echo "🚀 Starting HistoFlow Setup..."
 
@@ -37,10 +38,20 @@ if [ ! -f "$MODEL_PATH" ]; then
 fi
 echo "✅ region-detector model found: $MODEL_PATH"
 
+if [ ! -f "$RUNTIME_PORTS_LIB" ]; then
+  echo "❌ Missing runtime port helper at $RUNTIME_PORTS_LIB"
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$RUNTIME_PORTS_LIB"
+histoflow_resolve_runtime_ports "$PROJECT_ROOT"
+echo "✅ Runtime ports resolved: backend=$BACKEND_HOST_PORT, tiling=$TILING_HOST_PORT, analysis=$ANALYSIS_HOST_PORT, frontend=$FRONTEND_PORT"
+
 # ── 2. Docker Stack ───────────────────────────────────────────────────────────
 echo "🏗️  Starting Docker containers (MinIO, PostgreSQL, Tiling, Region-Detector)..."
 cd "$DOCKER_DIR"
-docker compose -f docker-compose.base.yml -f docker-compose.dev.yml -f docker-compose.ml.yml --profile cpu --profile dev up -d
+docker compose --env-file "$HISTOFLOW_RUNTIME_ENV_FILE" -f docker-compose.base.yml -f docker-compose.dev.yml -f docker-compose.ml.yml --profile cpu --profile dev up -d
 
 # ── 3. Wait for Services ──────────────────────────────────────────────────────
 wait_for_health() {
@@ -73,10 +84,10 @@ wait_for_health() {
 }
 
 echo "🔎 Health runbook order: backend -> tiling -> region-detector -> minio"
-wait_for_health "Backend" "http://localhost:8080/api/v1/health" "\"status\":\"UP\""
-wait_for_health "Tiling" "http://localhost:8000/health" "\"status\":\"ok\""
-wait_for_health "Region-Detector" "http://localhost:8001/health" "\"status\":\"ok\""
-wait_for_health "MinIO" "http://localhost:9000/minio/health/ready"
+wait_for_health "Backend" "${BACKEND_PUBLIC_URL}/api/v1/health" "\"status\":\"UP\""
+wait_for_health "Tiling" "${TILING_PUBLIC_URL}/health" "\"status\":\"ok\""
+wait_for_health "Region-Detector" "${ANALYSIS_PUBLIC_URL}/health" "\"status\":\"ok\""
+wait_for_health "MinIO" "${MINIO_PUBLIC_ENDPOINT}/minio/health/ready"
 
 # ── 4. Optional region-detector tests ────────────────────────────────────────
 if [ "${RUN_REGION_TESTS:-1}" = "1" ]; then
@@ -111,9 +122,9 @@ fi
 
 echo "🌐 Starting Frontend dev server..."
 echo "--------------------------------------------------------"
-echo "HistoFlow is being served at: http://localhost:5173"
-echo "Backend API (proxied): http://localhost:8080"
-echo "MinIO Console: http://localhost:9001"
+echo "HistoFlow is being served at: ${FRONTEND_PUBLIC_URL}"
+echo "Backend API (proxied): ${BACKEND_PUBLIC_URL}"
+echo "MinIO Console: http://localhost:${MINIO_CONSOLE_HOST_PORT}"
 echo "--------------------------------------------------------"
 
-npm run dev
+VITE_BACKEND_URL="$BACKEND_PUBLIC_URL" npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT"

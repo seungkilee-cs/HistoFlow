@@ -37,8 +37,9 @@ services:
     container_name: region-detector
     shm_size: "1g"
     ports:
-      - "8001:8001"
+      - "${ANALYSIS_HOST_PORT:-8001}:8001"
     environment:
+      - BACKEND_INTERNAL_BASE_URL=http://backend:8080
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin

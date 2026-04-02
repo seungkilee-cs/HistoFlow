@@ -21,9 +21,6 @@ services:
     env_file:
       - ./minio.env
     command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     volumes:
       - minio-data:/data
 
@@ -31,7 +28,7 @@ services:
     build:
       context: ../backend
     environment:
-      SPRING_APPLICATION_JSON: '{"spring":{"datasource":{"url":"jdbc:postgresql://postgres:5432/histoflow","username":"histoflow","password":"histoflow123","driver-class-name":"org.postgresql.Driver"},"jpa":{"database-platform":"org.hibernate.dialect.PostgreSQLDialect"},"jackson":{"serialization":{"write-dates-as-timestamps":false}}},"minio":{"endpoint":"http://minio:9000","public-endpoint":"http://localhost:9000","access-key":"minioadmin","secret-key":"minioadmin","buckets":{"tiles":"histoflow-tiles","uploads":"unprocessed-slides"}},"tiling":{"base-url":"http://tiling:8000","strategy":"direct-http"}}'
+      SPRING_APPLICATION_JSON: '{"spring":{"datasource":{"url":"jdbc:postgresql://postgres:5432/histoflow","username":"histoflow","password":"histoflow123","driver-class-name":"org.postgresql.Driver"},"jpa":{"database-platform":"org.hibernate.dialect.PostgreSQLDialect"},"jackson":{"serialization":{"write-dates-as-timestamps":false}}},"minio":{"endpoint":"http://minio:9000","public-endpoint":"${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}","access-key":"minioadmin","secret-key":"minioadmin","buckets":{"tiles":"histoflow-tiles","uploads":"unprocessed-slides"}},"tiling":{"base-url":"http://tiling:8000","strategy":"direct-http"}}'
     depends_on:
       - postgres
       - minio

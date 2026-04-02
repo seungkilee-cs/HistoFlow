@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+RUNTIME_ENV_FILE="$REPO_ROOT/.omx/runtime/ports.env"
 
 show_usage() {
   cat <<'EOF'
@@ -44,7 +45,12 @@ abort() {
   exit 1
 }
 
-BACKEND_URL="http://localhost:8080"
+if [[ -f "$RUNTIME_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$RUNTIME_ENV_FILE"
+fi
+
+BACKEND_URL="${BACKEND_PUBLIC_URL:-http://localhost:8080}"
 FILE_PATH=""
 FILE_NAME_OVERRIDE=""
 CONTENT_TYPE="application/octet-stream"

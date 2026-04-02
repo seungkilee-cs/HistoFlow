@@ -61,6 +61,7 @@ describe('TileViewerPage analysis flow', () => {
 
       if (url.includes('/api/v1/analysis/results/job-1')) {
         return jsonResponse({
+          heatmap_key: 'img-1/analysis/job-1/heatmap_level_12.png',
           tile_predictions: [
             {
               tile_x: 0,
@@ -91,19 +92,19 @@ describe('TileViewerPage analysis flow', () => {
     render(<TileViewerPage />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Current dataset:/i)).toBeTruthy();
+      expect(screen.getByText(/Active:/i)).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole('button', { name: /Run Cancer Analysis/i }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Show Heatmap/i)).toBeTruthy();
+      expect(screen.getByRole('checkbox', { name: /^Heatmap$/i })).toBeTruthy();
     }, { timeout: 7000 });
 
     const viewer = screen.getByTestId('image-viewer-mock');
     expect(viewer.getAttribute('data-show-heatmap')).toBe('true');
     expect(viewer.getAttribute('data-heatmap-url')).toContain('/api/v1/analysis/heatmap/job-1');
-  });
+  }, 10000);
 
   it('auto-populates summary and heatmap from completed history', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
