@@ -13,6 +13,7 @@ DOCKER_DIR="$REPO_ROOT/docker"
 FRONTEND_DIR="$REPO_ROOT/frontend"
 TILING_ENV="$REPO_ROOT/services/tiling/.env"
 TILING_ENV_EXAMPLE="$REPO_ROOT/services/tiling/.env.example"
+RUNTIME_PORTS_LIB="$REPO_ROOT/scripts/lib/runtime-ports.sh"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -77,8 +78,14 @@ command -v docker  &>/dev/null || die "docker not found — install Docker Deskt
 docker compose version &>/dev/null 2>&1 || die "Docker Compose v2 not found."
 command -v npm     &>/dev/null || die "npm not found — install Node.js."
 command -v curl    &>/dev/null || die "curl not found."
+[ -f "$RUNTIME_PORTS_LIB" ] || die "runtime port helper not found at $RUNTIME_PORTS_LIB"
+
+# shellcheck disable=SC1090
+source "$RUNTIME_PORTS_LIB"
+histoflow_resolve_runtime_ports "$REPO_ROOT"
 
 ok "docker, npm, curl all present"
+ok "Resolved ports: backend=$BACKEND_HOST_PORT, tiling=$TILING_HOST_PORT, analysis=$ANALYSIS_HOST_PORT, frontend=$FRONTEND_PORT"
 
 # ── Tiling service .env ───────────────────────────────────────────────────────
 if [ ! -f "$TILING_ENV" ]; then
@@ -110,7 +117,7 @@ if [ "$WITH_ML" = true ]; then
   PROFILES+=(--profile cpu)
 fi
 
-docker compose "${COMPOSE_FILES[@]}" "${PROFILES[@]}" up -d --build 2>&1 || true
+docker compose --env-file "$HISTOFLOW_RUNTIME_ENV_FILE" "${COMPOSE_FILES[@]}" "${PROFILES[@]}" up -d --build 2>&1 || true
 
 ok "Docker services started"
 
@@ -152,15 +159,15 @@ wait_port() {
 echo ""
 log "Waiting for services"
 
-wait_port "PostgreSQL :5432"    localhost 5432  120
-wait_http  "MinIO :9000"        "http://localhost:9000/minio/health/live"  120
-wait_port  "Backend :8080"      localhost 8080  180
-wait_http  "Tiling svc :8000"   "http://localhost:8000/health"             120
+wait_port "PostgreSQL :$POSTGRES_HOST_PORT" localhost "$POSTGRES_HOST_PORT" 120
+wait_http "MinIO :$MINIO_HOST_PORT" "$MINIO_PUBLIC_ENDPOINT/minio/health/live" 120
+wait_http "Backend :$BACKEND_HOST_PORT" "$BACKEND_PUBLIC_URL/api/v1/health" 180
+wait_http "Tiling svc :$TILING_HOST_PORT" "$TILING_PUBLIC_URL/health" 120
 
 if [ "$WITH_ML" = true ]; then
   echo ""
   warn "Region-detector is loading DINOv2 — this takes ~2-3 min on first start."
-  wait_http "Region detector :8001" "http://localhost:8001/health" 240
+  wait_http "Region detector :$ANALYSIS_HOST_PORT" "$ANALYSIS_PUBLIC_URL/health" 240
 fi
 
 # ── MinIO bucket check ────────────────────────────────────────────────────────
@@ -168,13 +175,13 @@ echo ""
 log "Verifying MinIO buckets"
 # Both buckets are auto-created on first use by the tiling service and backend,
 # but we can pre-create them to avoid any race on first upload.
-if curl -sf "http://localhost:9000/minio/health/live" -o /dev/null 2>/dev/null; then
+if curl -sf "$MINIO_PUBLIC_ENDPOINT/minio/health/live" -o /dev/null 2>/dev/null; then
   for bucket in histoflow-tiles unprocessed-slides; do
     # S3 HEAD bucket returns 200 if exists, 404 if not.
     # Creating via PUT requires auth signature, so we just note status.
     STATUS=$(curl -o /dev/null -sw "%{http_code}" \
       -u minioadmin:minioadmin \
-      "http://localhost:9000/$bucket" 2>/dev/null || echo "000")
+      "$MINIO_PUBLIC_ENDPOINT/$bucket" 2>/dev/null || echo "000")
     if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ]; then
       ok "Bucket '$bucket' exists"
     else
@@ -188,12 +195,12 @@ echo ""
 sep
 echo ""
 echo -e "  ${BOLD}Services running:${NC}"
-echo -e "   Frontend      ${GREEN}http://localhost:5173${NC}   (starting now)"
-echo -e "   Backend API   ${BLUE}http://localhost:8080${NC}"
-echo -e "   MinIO console ${BLUE}http://localhost:9001${NC}   (admin / minioadmin:minioadmin)"
-echo -e "   Tiling svc    ${BLUE}http://localhost:8000/health${NC}"
+echo -e "   Frontend      ${GREEN}${FRONTEND_PUBLIC_URL}${NC}   (starting now)"
+echo -e "   Backend API   ${BLUE}${BACKEND_PUBLIC_URL}${NC}"
+echo -e "   MinIO console ${BLUE}http://localhost:${MINIO_CONSOLE_HOST_PORT}${NC}   (admin / minioadmin:minioadmin)"
+echo -e "   Tiling svc    ${BLUE}${TILING_PUBLIC_URL}/health${NC}"
 if [ "$WITH_ML" = true ]; then
-  echo -e "   Analysis svc  ${BLUE}http://localhost:8001/health${NC}"
+  echo -e "   Analysis svc  ${BLUE}${ANALYSIS_PUBLIC_URL}/health${NC}"
 fi
 echo ""
 echo -e "  ${DIM}Press Ctrl+C to stop the frontend.${NC}"
@@ -206,9 +213,9 @@ echo ""
 (
   sleep 4
   if command -v open &>/dev/null; then          # macOS
-    open "http://localhost:5173"
+    open "$FRONTEND_PUBLIC_URL"
   elif command -v xdg-open &>/dev/null; then    # Linux
-    xdg-open "http://localhost:5173"
+    xdg-open "$FRONTEND_PUBLIC_URL"
   fi
 ) &
 
@@ -224,4 +231,4 @@ trap cleanup EXIT
 
 # ── Start frontend dev server (foreground) ────────────────────────────────────
 cd "$FRONTEND_DIR"
-npm run dev
+VITE_BACKEND_URL="$BACKEND_PUBLIC_URL" npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT"
