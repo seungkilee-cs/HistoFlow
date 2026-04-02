@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Tuple
 from urllib import error, request
+from xml.etree import ElementTree
 
 import pyvips
 from minio import Minio
@@ -29,6 +30,7 @@ class TilingService:
             secret_key=settings.MINIO_SECRET_KEY,
             secure=settings.MINIO_SECURE
         )
+        self._upload_bucket_ready = False
         Path(settings.TEMP_STORAGE_PATH).mkdir(parents=True, exist_ok=True)
 
     def process_image(
@@ -82,9 +84,11 @@ class TilingService:
                 dataset_name=dataset_name,
                 activity_entries=[self._build_activity_entry("UPLOADING", "Uploading tiles and metadata.")],
             )
+            self._ensure_upload_bucket()
             upload_start = time.perf_counter()
             file_count, total_bytes = self._upload_tiles(local_tiles_dir, image_id, job_id, dataset_name)
             upload_duration = time.perf_counter() - upload_start
+            manifest = self._build_manifest(local_tiles_dir, image_id)
 
             self._notify_job_event(
                 job_id=job_id,
@@ -117,6 +121,7 @@ class TilingService:
                     "total_seconds": round(total_duration, 3),
                 },
             )
+            self._write_manifest(manifest)
 
             print(
                 "Processing summary: "
@@ -239,9 +244,6 @@ class TilingService:
         bucket = settings.MINIO_UPLOAD_BUCKET
         print(f"Uploading tiles to bucket '{bucket}' with {_UPLOAD_WORKERS} workers...")
 
-        if not self.minio_client.bucket_exists(bucket):
-            self.minio_client.make_bucket(bucket)
-
         file_paths = sorted(p for p in tiles_dir.rglob("*") if p.is_file())
         total_files = len(file_paths)
         if total_files == 0:
@@ -332,6 +334,7 @@ class TilingService:
             "tile_upload_bucket": bucket,
             "tile_file_count": file_count,
             "tile_total_size_bytes": total_bytes,
+            "manifest_path": f"{image_id}/manifest.json",
             "timings": timings,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -347,7 +350,58 @@ class TilingService:
             content_type="application/json",
         )
 
+    def _write_manifest(self, manifest: dict[str, Any]) -> None:
+        bucket = settings.MINIO_UPLOAD_BUCKET
+        manifest_key = f"{manifest['image_id']}/manifest.json"
+        manifest_bytes = json.dumps(manifest, indent=2).encode("utf-8")
+        print(f"Uploading manifest to {bucket}/{manifest_key}")
+        self.minio_client.put_object(
+            bucket,
+            manifest_key,
+            data=io.BytesIO(manifest_bytes),
+            length=len(manifest_bytes),
+            content_type="application/json",
+        )
+
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _ensure_upload_bucket(self) -> None:
+        if self._upload_bucket_ready:
+            return
+
+        bucket = settings.MINIO_UPLOAD_BUCKET
+        if not self.minio_client.bucket_exists(bucket):
+            self.minio_client.make_bucket(bucket)
+        self._upload_bucket_ready = True
+
+    def _build_manifest(self, tiles_dir: Path, image_id: str) -> dict[str, Any]:
+        dzi_path = tiles_dir / "image.dzi"
+        root = ElementTree.fromstring(dzi_path.read_bytes())
+        namespace = ""
+        if root.tag.startswith("{"):
+            namespace = root.tag.split("}")[0] + "}"
+
+        size_el = root.find(f"{namespace}Size")
+        if size_el is None:
+            raise RuntimeError(f"Missing <Size> element in {dzi_path}")
+
+        levels_dir = tiles_dir / "image_files"
+        level_tile_counts = {
+            level.name: len([tile for tile in level.iterdir() if tile.is_file()])
+            for level in sorted(levels_dir.iterdir(), key=lambda entry: int(entry.name))
+            if level.is_dir() and level.name.isdigit()
+        }
+
+        return {
+            "image_id": image_id,
+            "width": int(size_el.attrib["Width"]),
+            "height": int(size_el.attrib["Height"]),
+            "tile_size": int(root.attrib.get("TileSize", "256")),
+            "format": root.attrib.get("Format", "jpg"),
+            "available_levels": [int(level) for level in level_tile_counts.keys()],
+            "level_tile_counts": level_tile_counts,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     def _build_activity_entry(
         self,

@@ -10,18 +10,20 @@ GET  /health            Health-check
 
 from __future__ import annotations
 
+import json
 import threading
 import traceback
 import uuid
-from dataclasses import asdict
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from urllib import error, request
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from .config import settings
-from .pipeline import AnalysisResult, preload_models, run_analysis
+from .minio_io import download_json
+from .pipeline import preload_models, run_analysis
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
@@ -51,15 +53,26 @@ class JobStatus(str, Enum):
 
 
 class JobState:
-    def __init__(self, image_id: str, tile_level: int, threshold: float):
+    def __init__(
+        self,
+        job_id: str,
+        image_id: str,
+        tile_level: int,
+        threshold: float,
+        tissue_threshold: float | None,
+    ):
+        self.job_id = job_id
         self.image_id = image_id
         self.tile_level = tile_level
         self.threshold = threshold
+        self.tissue_threshold = tissue_threshold
         self.status: JobStatus = JobStatus.ACCEPTED
         self.tiles_processed: int = 0
         self.total_tiles: int = 0
         self.message: str = "Queued"
-        self.result: Optional[Dict[str, Any]] = None
+        self.summary_key: Optional[str] = None
+        self.results_key: Optional[str] = None
+        self.heatmap_key: Optional[str] = None
         self.error: Optional[str] = None
         self._lock = threading.Lock()
 
@@ -78,6 +91,19 @@ class JobState:
                 self.tile_level = tile_level
             if self.status == JobStatus.ACCEPTED:
                 self.status = JobStatus.PROCESSING
+            _notify_job_event(
+                job_id=self.job_id,
+                payload={
+                    "status": "PROCESSING",
+                    "image_id": self.image_id,
+                    "tile_level": self.tile_level,
+                    "threshold": self.threshold,
+                    "tissue_threshold": self.tissue_threshold,
+                    "tiles_processed": self.tiles_processed,
+                    "total_tiles": self.total_tiles,
+                    "message": self.message,
+                },
+            )
 
     def to_status_dict(self) -> Dict[str, Any]:
         with self._lock:
@@ -98,6 +124,7 @@ _jobs: Dict[str, JobState] = {}
 
 
 class AnalyzeRequest(BaseModel):
+    job_id: Optional[str] = None
     image_id: str
     tile_level: Optional[int] = None
     threshold: Optional[float] = None
@@ -118,6 +145,7 @@ def _run_job(job_id: str, req: AnalyzeRequest) -> None:
     state = _jobs[job_id]
     try:
         result = run_analysis(
+            job_id=job_id,
             image_id=req.image_id,
             tile_level=req.tile_level,
             threshold=req.threshold,
@@ -126,25 +154,47 @@ def _run_job(job_id: str, req: AnalyzeRequest) -> None:
             progress_cb=state.update_progress,
         )
 
-        tile_dicts = [asdict(tp) for tp in result.tile_predictions]
-        state.result = {
-            "image_id": result.image_id,
-            "tile_level": result.tile_level,
-            "dzi": result.dzi,
-            "summary": asdict(result.summary),
-            "heatmap_key": result.heatmap_key,
-            "timings": result.timings,
-            "tile_predictions": tile_dicts,
-        }
         state.tile_level = result.tile_level
+        state.summary_key = result.summary_key
+        state.results_key = result.results_key
+        state.heatmap_key = result.heatmap_key
         state.status = JobStatus.COMPLETED
         state.message = "Analysis complete"
+        _notify_job_event(
+            job_id=job_id,
+            payload={
+                "status": "COMPLETED",
+                "image_id": result.image_id,
+                "tile_level": result.tile_level,
+                "tiles_processed": state.total_tiles,
+                "total_tiles": state.total_tiles,
+                "message": state.message,
+                "heatmap_key": result.heatmap_key,
+                "summary_key": result.summary_key,
+                "results_key": result.results_key,
+                "tumor_area_percentage": result.summary.tumor_area_percentage,
+                "aggregate_score": result.summary.aggregate_score,
+                "max_score": result.summary.max_score,
+            },
+        )
 
     except Exception as exc:
         traceback.print_exc()
         state.status = JobStatus.FAILED
         state.error = str(exc)
         state.message = f"Failed: {exc}"
+        _notify_job_event(
+            job_id=job_id,
+            payload={
+                "status": "FAILED",
+                "image_id": state.image_id,
+                "tile_level": state.tile_level,
+                "tiles_processed": state.tiles_processed,
+                "total_tiles": state.total_tiles,
+                "message": state.message,
+                "error_message": state.error,
+            },
+        )
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -153,11 +203,13 @@ def _run_job(job_id: str, req: AnalyzeRequest) -> None:
 @app.post("/jobs/analyze", response_model=AnalyzeResponse)
 async def submit_analysis(req: AnalyzeRequest, background_tasks: BackgroundTasks):
     """Submit a region-detection job. Returns immediately."""
-    job_id = str(uuid.uuid4())
+    job_id = req.job_id or str(uuid.uuid4())
     state = JobState(
+        job_id=job_id,
         image_id=req.image_id,
         tile_level=req.tile_level or settings.DEFAULT_TILE_LEVEL,
         threshold=req.threshold or 0.5,
+        tissue_threshold=req.tissue_threshold,
     )
     _jobs[job_id] = state
     background_tasks.add_task(_run_job, job_id, req)
@@ -198,9 +250,41 @@ async def get_results(job_id: str):
             },
         )
 
-    return state.result
+    if not state.summary_key:
+        raise HTTPException(status_code=500, detail="Analysis summary artifact missing")
+
+    summary = download_json(state.summary_key)
+    predictions = download_json(state.results_key) if state.results_key else []
+    return {
+        **summary,
+        "summary_key": state.summary_key,
+        "results_key": state.results_key,
+        "tile_predictions": predictions,
+    }
 
 
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "region-detector"}
+
+
+def _notify_job_event(job_id: str, payload: Dict[str, Any]) -> None:
+    if not settings.BACKEND_INTERNAL_BASE_URL:
+        return
+
+    endpoint = (
+        f"{settings.BACKEND_INTERNAL_BASE_URL.rstrip('/')}"
+        f"/api/v1/internal/analysis/jobs/{job_id}/events"
+    )
+    req = request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=10) as response:
+            if response.status >= 400:
+                print(f"[analysis] Backend notify failed for {job_id}: HTTP {response.status}")
+    except error.URLError as exc:
+        print(f"[analysis] Backend notify failed for {job_id}: {exc}")

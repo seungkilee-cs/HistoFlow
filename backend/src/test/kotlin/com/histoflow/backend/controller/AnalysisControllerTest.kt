@@ -67,24 +67,20 @@ class AnalysisControllerTest {
 
     @Test
     fun `heatmap endpoint streams png`() {
-        given(analysisService.getHeatmapKey("job-1"))
-            .willReturn("img-1/heatmap_level_12.png")
         val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
-        given(analysisService.getHeatmapObject("img-1/heatmap_level_12.png"))
+        given(analysisService.getHeatmapObjectForJob("job-1"))
             .willReturn(ByteArrayInputStream(pngBytes))
 
         mockMvc.perform(get("/api/v1/analysis/heatmap/job-1"))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.IMAGE_PNG))
 
-        verify(analysisService).getHeatmapKey("job-1")
-        verify(analysisService).getHeatmapObject("img-1/heatmap_level_12.png")
+        verify(analysisService).getHeatmapObjectForJob("job-1")
     }
 
     @Test
     fun `heatmap endpoint maps upstream 202 to 409`() {
-        given(analysisService.getHeatmapKey("job-2")).willReturn(null)
-        given(analysisService.getResults("job-2")).willThrow(
+        given(analysisService.getHeatmapObjectForJob("job-2")).willThrow(
             AnalysisService.AnalysisProxyException(202, "still processing")
         )
 
