@@ -64,23 +64,15 @@ class AnalysisControllerTest {
 
     @Test
     fun `heatmap endpoint streams png`() {
-        given(analysisService.getResults("job-1")).willReturn(
-            AnalysisService.AnalysisResultResponse(
-                imageId = "img-1",
-                tileLevel = 12,
-                heatmapKey = "img-1/heatmap_level_12.png"
-            )
-        )
         val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
-        given(analysisService.getHeatmapObject("img-1/heatmap_level_12.png"))
+        given(analysisService.getHeatmapObjectForJob("job-1"))
             .willReturn(ByteArrayInputStream(pngBytes))
 
         mockMvc.perform(get("/api/v1/analysis/heatmap/job-1"))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.IMAGE_PNG))
 
-        verify(analysisService).getResults("job-1")
-        verify(analysisService).getHeatmapObject("img-1/heatmap_level_12.png")
+        verify(analysisService).getHeatmapObjectForJob("job-1")
     }
 
     @Test

@@ -24,10 +24,13 @@ class Settings(BaseSettings):
 
     # ── Worker ─────────────────────────────────────────────────────────
     TEMP_DIR: str = "/tmp/region_detector"
+    BACKEND_INTERNAL_BASE_URL: str | None = None
 
     # ── Concurrency ────────────────────────────────────────────────────
     # Number of parallel threads used to download tiles from MinIO.
     DOWNLOAD_WORKERS: int = 16
+    DOWNLOAD_CHUNK_SIZE: int = 256
+    TISSUE_WORKERS: int = 8
 
 
 settings = Settings()
