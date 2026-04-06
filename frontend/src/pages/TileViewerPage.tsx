@@ -27,6 +27,18 @@ type AnalysisSummary = {
   max_score: number;
 };
 
+type AnalysisJobRecord = {
+  jobId: string;
+  status: 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  tilesProcessed: number;
+  totalTiles: number;
+  tumorAreaPercentage: number | null;
+  aggregateScore: number | null;
+  maxScore: number | null;
+  heatmapKey: string | null;
+  errorMessage: string | null;
+};
+
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8080';
 
 const TileViewerPage: React.FC = () => {
@@ -94,6 +106,7 @@ const TileViewerPage: React.FC = () => {
     setSearchResults([]);
     setErrorMessage(null);
     resetAnalysis();
+    fetchHistoryForImage(dataset.imageId);
   };
 
   const applyDatasetById = (imageId: string, fallbackLabel?: string) => {
@@ -107,6 +120,7 @@ const TileViewerPage: React.FC = () => {
     setSearchResults([]);
     setErrorMessage(null);
     resetAnalysis();
+    fetchHistoryForImage(imageId);
   };
 
   // ── Route param ───────────────────────────────────────────────────────────
@@ -213,6 +227,32 @@ const TileViewerPage: React.FC = () => {
     } catch {
       setErrorMessage('Failed to start cancer analysis.');
       setIsAnalyzing(false);
+    }
+  };
+
+  const fetchHistoryForImage = async (imageId: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/analysis/history/${imageId}`);
+      if (!res.ok) return;
+      const data: { jobs: AnalysisJobRecord[] } = await res.json();
+      const latest = data.jobs.find(j => j.status === 'COMPLETED');
+      if (!latest) return;
+      setAnalysisJobId(latest.jobId);
+      setAnalysisStatus('completed');
+      setAnalysisSummary({
+        total_tiles: latest.totalTiles,
+        tissue_tiles: 0,
+        skipped_tiles: 0,
+        flagged_tiles: 0,
+        tumor_area_percentage: latest.tumorAreaPercentage ?? 0,
+        aggregate_score: latest.aggregateScore ?? 0,
+        max_score: latest.maxScore ?? 0,
+      });
+      if (latest.heatmapKey) {
+        setHeatmapUrl(`${API_BASE_URL}/api/v1/analysis/heatmap/${latest.jobId}`);
+      }
+    } catch {
+      // non-fatal — viewer still works without history
     }
   };
 

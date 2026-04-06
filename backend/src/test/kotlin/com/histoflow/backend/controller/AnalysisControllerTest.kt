@@ -1,5 +1,7 @@
 package com.histoflow.backend.controller
 
+import com.histoflow.backend.domain.analysis.AnalysisJobStatus
+import com.histoflow.backend.dto.analysis.AnalysisJobResponse
 import com.histoflow.backend.service.AnalysisService
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
@@ -15,6 +17,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.io.ByteArrayInputStream
+import java.util.UUID
 
 @WebMvcTest(controllers = [AnalysisController::class])
 class AnalysisControllerTest {
@@ -64,13 +67,8 @@ class AnalysisControllerTest {
 
     @Test
     fun `heatmap endpoint streams png`() {
-        given(analysisService.getResults("job-1")).willReturn(
-            AnalysisService.AnalysisResultResponse(
-                imageId = "img-1",
-                tileLevel = 12,
-                heatmapKey = "img-1/heatmap_level_12.png"
-            )
-        )
+        given(analysisService.getHeatmapKey("job-1"))
+            .willReturn("img-1/heatmap_level_12.png")
         val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
         given(analysisService.getHeatmapObject("img-1/heatmap_level_12.png"))
             .willReturn(ByteArrayInputStream(pngBytes))
@@ -79,12 +77,13 @@ class AnalysisControllerTest {
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.IMAGE_PNG))
 
-        verify(analysisService).getResults("job-1")
+        verify(analysisService).getHeatmapKey("job-1")
         verify(analysisService).getHeatmapObject("img-1/heatmap_level_12.png")
     }
 
     @Test
     fun `heatmap endpoint maps upstream 202 to 409`() {
+        given(analysisService.getHeatmapKey("job-2")).willReturn(null)
         given(analysisService.getResults("job-2")).willThrow(
             AnalysisService.AnalysisProxyException(202, "still processing")
         )
@@ -92,5 +91,32 @@ class AnalysisControllerTest {
         mockMvc.perform(get("/api/v1/analysis/heatmap/job-2"))
             .andExpect(status().isConflict)
             .andExpect(jsonPath("$.error").value("still processing"))
+    }
+
+    @Test
+    fun `history endpoint returns completed jobs for image`() {
+        val job = AnalysisJobResponse(
+            id = UUID.randomUUID(),
+            jobId = "job-1",
+            imageId = "img-1",
+            status = AnalysisJobStatus.COMPLETED,
+            tileLevel = 12,
+            threshold = 0.5f,
+            tissueThreshold = 0.15f,
+            tilesProcessed = 400,
+            totalTiles = 400,
+            tumorAreaPercentage = 18.4,
+            aggregateScore = 0.712,
+            maxScore = 0.981,
+            heatmapKey = "img-1/heatmap_level_12.png",
+            errorMessage = null
+        )
+        given(analysisService.getHistoryForImage("img-1")).willReturn(listOf(job))
+
+        mockMvc.perform(get("/api/v1/analysis/history/img-1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.jobs[0].jobId").value("job-1"))
+            .andExpect(jsonPath("$.jobs[0].status").value("COMPLETED"))
+            .andExpect(jsonPath("$.jobs[0].tumorAreaPercentage").value(18.4))
     }
 }
