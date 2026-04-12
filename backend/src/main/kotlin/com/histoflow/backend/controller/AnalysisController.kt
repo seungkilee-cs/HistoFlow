@@ -1,8 +1,9 @@
 package com.histoflow.backend.controller
 
+import com.histoflow.backend.dto.analysis.AnalysisJobResponse
 import com.histoflow.backend.service.AnalysisService
-import org.springframework.core.io.InputStreamResource
 import org.slf4j.LoggerFactory
+import org.springframework.core.io.InputStreamResource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -61,8 +62,8 @@ class AnalysisController(
     @GetMapping("/heatmap/{jobId}")
     fun getHeatmap(@PathVariable jobId: String): ResponseEntity<Any> {
         return try {
-            val results = analysisService.getResults(jobId)
-            val heatmapKey = results.heatmapKey
+            val heatmapKey = analysisService.getHeatmapKey(jobId)
+                ?: analysisService.getResults(jobId).heatmapKey
                 ?: return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(mapOf("error" to "No heatmap key available for job $jobId"))
 
@@ -80,4 +81,10 @@ class AnalysisController(
             ResponseEntity.status(status).body(mapOf("error" to e.message))
         }
     }
+
+    data class AnalysisHistoryResponse(val jobs: List<AnalysisJobResponse>)
+
+    @GetMapping("/history/{imageId}")
+    fun getHistory(@PathVariable imageId: String): ResponseEntity<AnalysisHistoryResponse> =
+        ResponseEntity.ok(AnalysisHistoryResponse(analysisService.getHistoryForImage(imageId)))
 }

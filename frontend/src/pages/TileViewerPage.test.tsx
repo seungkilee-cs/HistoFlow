@@ -42,6 +42,10 @@ describe('TileViewerPage analysis flow', () => {
         });
       }
 
+      if (url.includes('/api/v1/analysis/history/')) {
+        return jsonResponse({ jobs: [] });
+      }
+
       if (url.includes('/api/v1/analysis/trigger/img-1') && method === 'POST') {
         return jsonResponse({ job_id: 'job-1', status: 'accepted', message: 'ok' });
       }
@@ -99,5 +103,54 @@ describe('TileViewerPage analysis flow', () => {
     const viewer = screen.getByTestId('image-viewer-mock');
     expect(viewer.getAttribute('data-show-heatmap')).toBe('true');
     expect(viewer.getAttribute('data-heatmap-url')).toContain('/api/v1/analysis/heatmap/job-1');
+  });
+
+  it('auto-populates summary and heatmap from completed history', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes('/api/v1/tiles/datasets')) {
+        return jsonResponse({
+          datasets: [
+            {
+              imageId: 'img-1',
+              datasetName: 'Case-1',
+              totalObjects: 120,
+              totalSizeBytes: 1000,
+              lastModifiedMillis: Date.now(),
+            },
+          ],
+          nextContinuationToken: null,
+          appliedPrefix: '',
+        });
+      }
+
+      if (url.includes('/api/v1/analysis/history/img-1')) {
+        return jsonResponse({
+          jobs: [{
+            jobId: 'job-old',
+            status: 'COMPLETED',
+            tilesProcessed: 300,
+            totalTiles: 300,
+            tumorAreaPercentage: 22.1,
+            aggregateScore: 0.8,
+            maxScore: 0.95,
+            heatmapKey: 'img-1/heatmap_level_12.png',
+            errorMessage: null,
+          }],
+        });
+      }
+
+      return new Response(null, { status: 404 });
+    }));
+
+    render(<TileViewerPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('image-viewer-mock').getAttribute('data-heatmap-url'))
+        .toContain('/api/v1/analysis/heatmap/job-old');
+    }, { timeout: 3000 });
+
+    expect(screen.getByText(/22\.1/)).toBeTruthy();
   });
 });

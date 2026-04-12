@@ -4,6 +4,7 @@ services:
   backend:
     environment:
       - ANALYSIS_BASE_URL=http://region-detector:8001
+      - SPRING_JACKSON_MAPPER_REQUIRE_HANDLERS_FOR_JAVA8_TIMES=false
     depends_on:
       - postgres
       - minio

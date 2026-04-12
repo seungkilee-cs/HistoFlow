@@ -3,6 +3,10 @@ package com.histoflow.backend.service
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.histoflow.backend.config.AnalysisProperties
 import com.histoflow.backend.config.MinioProperties
+import com.histoflow.backend.domain.analysis.AnalysisJobEntity
+import com.histoflow.backend.domain.analysis.AnalysisJobStatus
+import com.histoflow.backend.dto.analysis.AnalysisJobResponse
+import com.histoflow.backend.repository.analysis.AnalysisJobRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpStatusCodeException
@@ -17,7 +21,8 @@ class AnalysisService(
     private val restTemplate: RestTemplate,
     private val analysisProperties: AnalysisProperties,
     private val s3Client: S3Client,
-    private val minioProperties: MinioProperties
+    private val minioProperties: MinioProperties,
+    private val analysisJobRepository: AnalysisJobRepository
 ) {
     private val logger = LoggerFactory.getLogger(AnalysisService::class.java)
 
@@ -140,6 +145,18 @@ class AnalysisService(
             if (response == null) {
                 throw AnalysisProxyException(502, "Empty response from analysis service")
             }
+
+            val entity = AnalysisJobEntity(
+                jobId = response.job_id,
+                imageId = imageId,
+                status = AnalysisJobStatus.PROCESSING,
+                tileLevel = tileLevel,
+                threshold = threshold,
+                tissueThreshold = tissueThreshold
+            )
+            analysisJobRepository.save(entity)
+            logger.info("Persisted analysis job {} for image {}", response.job_id, imageId)
+
             return response
         } catch (e: HttpStatusCodeException) {
             throw toProxyException("trigger", e)
@@ -158,6 +175,21 @@ class AnalysisService(
             if (response == null) {
                 throw AnalysisProxyException(502, "Empty status response from analysis service")
             }
+
+            try {
+                analysisJobRepository.findByJobId(jobId).ifPresent { entity ->
+                    entity.tilesProcessed = response.tilesProcessed
+                    entity.totalTiles     = response.totalTiles
+                    if (response.status == "failed") {
+                        entity.status       = AnalysisJobStatus.FAILED
+                        entity.errorMessage = response.message
+                    }
+                    analysisJobRepository.save(entity)
+                }
+            } catch (e: Exception) {
+                logger.warn("Failed to update analysis job {} progress in DB: {}", jobId, e.message)
+            }
+
             return response
         } catch (e: HttpStatusCodeException) {
             throw toProxyException("status", e)
@@ -176,6 +208,26 @@ class AnalysisService(
             if (response == null) {
                 throw AnalysisProxyException(502, "Empty results response from analysis service")
             }
+
+            try {
+                analysisJobRepository.findByJobId(jobId).ifPresent { entity ->
+                    val summary = response.summary
+                    if (summary != null) {
+                        entity.status              = AnalysisJobStatus.COMPLETED
+                        entity.tilesProcessed      = summary.totalTiles
+                        entity.totalTiles          = summary.totalTiles
+                        entity.tumorAreaPercentage = summary.tumorAreaPercentage
+                        entity.aggregateScore      = summary.aggregateScore
+                        entity.maxScore            = summary.maxScore
+                        entity.heatmapKey          = response.heatmapKey
+                        analysisJobRepository.save(entity)
+                        logger.info("Persisted completed analysis results for job {}", jobId)
+                    }
+                }
+            } catch (e: Exception) {
+                logger.warn("Failed to persist analysis results for job {} in DB: {}", jobId, e.message)
+            }
+
             return response
         } catch (e: HttpStatusCodeException) {
             throw toProxyException("results", e)
@@ -186,6 +238,14 @@ class AnalysisService(
             throw AnalysisProxyException(502, "Failed to reach analysis service: ${e.message}")
         }
     }
+
+    fun getHeatmapKey(jobId: String): String? =
+        analysisJobRepository.findByJobId(jobId).map { it.heatmapKey }.orElse(null)
+
+    fun getHistoryForImage(imageId: String): List<AnalysisJobResponse> =
+        analysisJobRepository.findAllByImageId(imageId)
+            .sortedByDescending { it.createdAt }
+            .map { it.toResponse() }
 
     fun getHeatmapObject(heatmapKey: String): InputStream {
         return try {
@@ -219,4 +279,21 @@ class AnalysisService(
         logger.error(message)
         return AnalysisProxyException(statusCode, message)
     }
+
+    private fun AnalysisJobEntity.toResponse() = AnalysisJobResponse(
+        id                  = id ?: error("Persisted analysis job must have an id"),
+        jobId               = jobId,
+        imageId             = imageId,
+        status              = status,
+        tileLevel           = tileLevel,
+        threshold           = threshold,
+        tissueThreshold     = tissueThreshold,
+        tilesProcessed      = tilesProcessed,
+        totalTiles          = totalTiles,
+        tumorAreaPercentage = tumorAreaPercentage,
+        aggregateScore      = aggregateScore,
+        maxScore            = maxScore,
+        heatmapKey          = heatmapKey,
+        errorMessage        = errorMessage
+    )
 }
