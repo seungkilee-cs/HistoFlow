@@ -56,6 +56,9 @@ class AnalysisJobEntity(
     @Column(nullable = true)
     var heatmapKey: String? = null,
 
+    @Column(nullable = true)
+    var summaryKey: String? = null,
+
     // The key to the full tile predictions JSON
     @Column(nullable = true)
     var resultsKey: String? = null,
@@ -69,6 +72,9 @@ class AnalysisJobEntity(
 
     @Column(nullable = true)
     var maxScore: Double? = null,
+
+    @Column(nullable = true, length = 512)
+    var statusMessage: String? = null,
 
     // Populated if the job fails
     @Column(nullable = true, length = 1024)

@@ -4,20 +4,20 @@ services:
   postgres:
     profiles: ["dev"]
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
 
   minio:
     profiles: ["dev"]
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
 
   backend:
     profiles: ["dev"]
     ports:
-      - "8080:8080"
+      - "${BACKEND_HOST_PORT:-8080}:8080"
 
   tiling:
     profiles: ["dev"]
     ports:
-      - "8000:8000"
+      - "${TILING_HOST_PORT:-8000}:8000"

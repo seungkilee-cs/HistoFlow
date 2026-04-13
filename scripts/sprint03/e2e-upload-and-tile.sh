@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SIM_SCRIPT="$SCRIPT_DIR/simulate-upload.sh"
+RUNTIME_ENV_FILE="$REPO_ROOT/.omx/runtime/ports.env"
 
 show_usage() {
   cat <<'EOF'
@@ -42,7 +43,12 @@ abort() {
 
 [[ -x "$SIM_SCRIPT" ]] || abort "Simulation script not found or not executable at $SIM_SCRIPT"
 
-BACKEND_URL="http://localhost:8080"
+if [[ -f "$RUNTIME_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$RUNTIME_ENV_FILE"
+fi
+
+BACKEND_URL="${BACKEND_PUBLIC_URL:-http://localhost:8080}"
 FILE_PATH=""
 CONTENT_TYPE="application/octet-stream"
 DATASET_NAME=""
