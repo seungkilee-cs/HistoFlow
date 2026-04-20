@@ -309,6 +309,28 @@
   }
 }
 
+.tvp__select {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  outline: none;
+  cursor: pointer;
+
+  &:focus {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(252, 163, 17, 0.1);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
 .tvp__toggles {
   display: flex;
   flex-direction: column;

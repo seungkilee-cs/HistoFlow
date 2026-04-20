@@ -41,7 +41,8 @@ class AnalysisService(
         val tile_level: Int? = null,
         val threshold: Float? = null,
         val tissue_threshold: Float? = null,
-        val batch_size: Int = 16
+        val batch_size: Int = 16,
+        val model_name: String? = null
     )
 
     data class AnalyzeResponse(
@@ -180,7 +181,8 @@ class AnalysisService(
         tileLevel: Int? = null,
         threshold: Float? = null,
         tissueThreshold: Float? = null,
-        batchSize: Int? = null
+        batchSize: Int? = null,
+        modelName: String? = null
     ): AnalyzeResponse {
         val jobId = java.util.UUID.randomUUID().toString()
         val url = "${analysisProperties.baseUrl}/jobs/analyze"
@@ -190,7 +192,8 @@ class AnalysisService(
             tile_level = tileLevel,
             threshold = threshold,
             tissue_threshold = tissueThreshold,
-            batch_size = batchSize ?: 16
+            batch_size = batchSize ?: 16,
+            model_name = modelName
         )
         val entity = AnalysisJobEntity(
             jobId = jobId,
@@ -199,6 +202,7 @@ class AnalysisService(
             tileLevel = tileLevel,
             threshold = threshold,
             tissueThreshold = tissueThreshold,
+            modelName = modelName,
             statusMessage = "Analysis job accepted and started."
         )
         analysisJobRepository.save(entity)
@@ -319,6 +323,17 @@ class AnalysisService(
         return getHeatmapObject(heatmapKey)
     }
 
+    @Suppress("UNCHECKED_CAST")
+    fun getAvailableModels(): Map<String, Any> {
+        return try {
+            val url = "${analysisProperties.baseUrl}/models"
+            restTemplate.getForObject(url, Map::class.java) as? Map<String, Any> ?: mapOf("models" to emptyList<String>())
+        } catch (e: Exception) {
+            logger.warn("Failed to fetch model list from analysis service: {}", e.message)
+            mapOf("models" to emptyList<String>())
+        }
+    }
+
     fun getHeatmapKey(jobId: String): String? =
         analysisJobRepository.findByJobId(jobId).map { it.heatmapKey }.orElse(null)
 
@@ -422,6 +437,7 @@ class AnalysisService(
         aggregateScore      = aggregateScore,
         maxScore            = maxScore,
         heatmapKey          = heatmapKey,
+        modelName           = modelName,
         errorMessage        = errorMessage
     )
 }

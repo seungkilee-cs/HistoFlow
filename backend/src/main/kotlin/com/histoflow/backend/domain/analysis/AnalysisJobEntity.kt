@@ -76,6 +76,10 @@ class AnalysisJobEntity(
     @Column(nullable = true, length = 512)
     var statusMessage: String? = null,
 
+    // The classifier head (.pkl file) used for this analysis run
+    @Column(nullable = true, length = 255)
+    var modelName: String? = null,
+
     // Populated if the job fails
     @Column(nullable = true, length = 1024)
     var errorMessage: String? = null,

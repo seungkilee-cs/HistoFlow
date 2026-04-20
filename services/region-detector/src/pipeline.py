@@ -57,7 +57,7 @@ from .tissue_detector import TissueResult, detect_tissue
 # Thread-safe: both models are read-only during inference.
 
 _embedder: Optional[Embedder] = None
-_classifier: Optional[Classifier] = None
+_classifiers: Dict[str, Classifier] = {}
 _model_lock = threading.Lock()
 
 
@@ -71,15 +71,16 @@ def get_embedder() -> Embedder:
     return _embedder
 
 
-def get_classifier() -> Classifier:
-    global _classifier
+def get_classifier(model_path: str | None = None) -> Classifier:
+    path = model_path or settings.MODEL_PATH
     with _model_lock:
-        if _classifier is None:
-            print("[pipeline] Loading sklearn classifier…")
-            _classifier = Classifier()
-            _classifier.load()
-            print("[pipeline] Classifier ready.")
-    return _classifier
+        if path not in _classifiers:
+            print(f"[pipeline] Loading sklearn classifier from {path}…")
+            clf = Classifier(model_path=path)
+            clf.load()
+            _classifiers[path] = clf
+            print(f"[pipeline] Classifier ready: {path}")
+    return _classifiers[path]
 
 
 def preload_models() -> None:
@@ -207,6 +208,7 @@ def run_analysis(
     tissue_threshold: float | None = None,
     batch_size: int = 16,
     progress_cb: ProgressCallback = None,
+    model_path: str | None = None,
 ) -> AnalysisResult:
     """Run the full region-detection pipeline for *image_id*."""
     requested_tile_level = tile_level if tile_level is not None else settings.DEFAULT_TILE_LEVEL
@@ -261,7 +263,7 @@ def run_analysis(
     # ── 3. Initialise models (singletons — fast after first call) ──────
     t0 = time.perf_counter()
     embedder = get_embedder()
-    classifier = get_classifier()
+    classifier = get_classifier(model_path)
     timings["model_load_s"] = round(time.perf_counter() - t0, 3)
 
     _report(progress_cb, 0, total, "Downloading tiles…", tile_level)

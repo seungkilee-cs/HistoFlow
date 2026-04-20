@@ -7,10 +7,17 @@ Cancer detection AI platform, inspired by [Lunit](https://www.lunit.io/).
 ### Development Environment (All-in-One)
 
 ```bash
-./scripts/dev-start.sh
+# Base stack — upload, tile, and view slides
+./dev.sh
+
+# Full stack — includes AI analysis (region-detector + model selection)
+./dev.sh --ml
+
+# Stop everything
+./dev.sh --down
 ```
 
-Starts MinIO, Backend, and Frontend in separate terminal windows.
+> **Note:** The cancer analysis feature (heatmap generation, classifier model selection) requires the `--ml` flag. Without it, the region-detector service does not start and the "Run Cancer Analysis" button will not produce results. First start with `--ml` is slow (~2-3 min) as the DINOv2 model loads into memory.
 
 ### Manual Setup
 

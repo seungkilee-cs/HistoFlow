@@ -17,5 +17,6 @@ data class AnalysisJobResponse(
     val aggregateScore: Double?,
     val maxScore: Double?,
     val heatmapKey: String?,
+    val modelName: String?,
     val errorMessage: String?
 )

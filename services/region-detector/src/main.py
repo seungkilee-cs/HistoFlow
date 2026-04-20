@@ -15,6 +15,7 @@ import threading
 import traceback
 import uuid
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib import error, request
 
@@ -130,6 +131,7 @@ class AnalyzeRequest(BaseModel):
     threshold: Optional[float] = None
     tissue_threshold: Optional[float] = None
     batch_size: int = 16
+    model_name: Optional[str] = None
 
 
 class AnalyzeResponse(BaseModel):
@@ -144,6 +146,9 @@ class AnalyzeResponse(BaseModel):
 def _run_job(job_id: str, req: AnalyzeRequest) -> None:
     state = _jobs[job_id]
     try:
+        model_path = None
+        if req.model_name:
+            model_path = str(Path(settings.MODEL_PATH).parent / req.model_name)
         result = run_analysis(
             job_id=job_id,
             image_id=req.image_id,
@@ -152,6 +157,7 @@ def _run_job(job_id: str, req: AnalyzeRequest) -> None:
             tissue_threshold=req.tissue_threshold,
             batch_size=req.batch_size,
             progress_cb=state.update_progress,
+            model_path=model_path,
         )
 
         state.tile_level = result.tile_level
@@ -266,6 +272,14 @@ async def get_results(job_id: str):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "region-detector"}
+
+
+@app.get("/models")
+def list_models():
+    """List available .pkl classifier heads in the models directory."""
+    models_dir = Path(settings.MODEL_PATH).parent
+    pkls = sorted(p.name for p in models_dir.glob("*.pkl")) if models_dir.exists() else []
+    return {"models": pkls}
 
 
 def _notify_job_event(job_id: str, payload: Dict[str, Any]) -> None:

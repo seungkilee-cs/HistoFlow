@@ -23,7 +23,8 @@ class AnalysisController(
         @RequestParam(required = false) tileLevel: Int?,
         @RequestParam(required = false) threshold: Float?,
         @RequestParam(required = false) tissueThreshold: Float?,
-        @RequestParam(required = false) batchSize: Int?
+        @RequestParam(required = false) batchSize: Int?,
+        @RequestParam(required = false) modelName: String?
     ): ResponseEntity<*> {
         return try {
             val response = analysisService.triggerAnalysis(
@@ -31,11 +32,21 @@ class AnalysisController(
                 tileLevel = tileLevel,
                 threshold = threshold,
                 tissueThreshold = tissueThreshold,
-                batchSize = batchSize
+                batchSize = batchSize,
+                modelName = modelName
             )
             ResponseEntity.ok(response)
         } catch (e: AnalysisService.AnalysisProxyException) {
             ResponseEntity.status(e.statusCode).body(mapOf("error" to e.message))
+        }
+    }
+
+    @GetMapping("/models")
+    fun getModels(): ResponseEntity<*> {
+        return try {
+            ResponseEntity.ok(analysisService.getAvailableModels())
+        } catch (e: Exception) {
+            ResponseEntity.ok(mapOf("models" to emptyList<String>()))
         }
     }
 

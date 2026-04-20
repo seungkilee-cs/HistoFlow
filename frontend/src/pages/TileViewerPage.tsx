@@ -82,6 +82,16 @@ const TileViewerPage: React.FC = () => {
   const [threshold, setThreshold] = useState(0.5);
   const [overlayOpacity, setOverlayOpacity] = useState(0.6);
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.45);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+
+  // ── Fetch available classifier models once on mount ───────────────────────
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/v1/analysis/models`)
+      .then(r => r.ok ? r.json() : { models: [] })
+      .then(data => setAvailableModels(Array.isArray(data.models) ? data.models : []))
+      .catch(() => setAvailableModels([]));
+  }, []);
 
   // ── Dataset helpers ───────────────────────────────────────────────────────
   const resetAnalysis = () => {
@@ -219,7 +229,8 @@ const TileViewerPage: React.FC = () => {
       setHeatmapWarning(null);
       setHeatmapUrl(null);
       setAnalysisSummary(null);
-      const res = await fetch(`${API_BASE_URL}/api/v1/analysis/trigger/${activeImageId}`, { method: 'POST' });
+      const params = selectedModel ? `?modelName=${encodeURIComponent(selectedModel)}` : '';
+      const res = await fetch(`${API_BASE_URL}/api/v1/analysis/trigger/${activeImageId}${params}`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to trigger analysis');
       const data = await res.json();
       setAnalysisJobId(data.job_id);
@@ -373,6 +384,22 @@ const TileViewerPage: React.FC = () => {
 
         {/* Analysis trigger */}
         <section className="tvp__section">
+          {availableModels.length > 0 && (
+            <label className="tvp__slider-label">
+              <span>Classifier model</span>
+              <select
+                className="tvp__select"
+                value={selectedModel}
+                onChange={e => setSelectedModel(e.target.value)}
+                disabled={isAnalyzing}
+              >
+                <option value="">Default</option>
+                {availableModels.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <button
             className={`tvp__analyze-btn${isAnalyzing ? ' tvp__analyze-btn--busy' : ''}`}
             onClick={triggerAnalysis}
