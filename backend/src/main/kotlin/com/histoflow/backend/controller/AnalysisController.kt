@@ -1,6 +1,8 @@
 package com.histoflow.backend.controller
 
 import com.histoflow.backend.dto.analysis.AnalysisJobResponse
+import com.histoflow.backend.dto.analysis.SaveAnalysisRequest
+import com.histoflow.backend.dto.analysis.SavedAnalysisResponse
 import com.histoflow.backend.service.AnalysisService
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.InputStreamResource
@@ -9,6 +11,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/analysis")
@@ -81,6 +84,48 @@ class AnalysisController(
             ResponseEntity.status(e.statusCode).body(mapOf("error" to e.message))
         }
     }
+
+    @PostMapping("/saved/{jobId}")
+    fun saveAnalysis(
+        @PathVariable jobId: String,
+        @RequestBody(required = false) request: SaveAnalysisRequest?
+    ): ResponseEntity<*> {
+        return try {
+            ResponseEntity.ok(analysisService.saveAnalysis(jobId, request ?: SaveAnalysisRequest()))
+        } catch (e: AnalysisService.AnalysisProxyException) {
+            ResponseEntity.status(e.statusCode).body(mapOf("error" to e.message))
+        }
+    }
+
+    @GetMapping("/saved/{savedAnalysisId}")
+    fun getSavedAnalysis(@PathVariable savedAnalysisId: UUID): ResponseEntity<*> {
+        return try {
+            ResponseEntity.ok(analysisService.getSavedAnalysis(savedAnalysisId))
+        } catch (e: AnalysisService.AnalysisProxyException) {
+            ResponseEntity.status(e.statusCode).body(mapOf("error" to e.message))
+        }
+    }
+
+    @GetMapping("/saved/{savedAnalysisId}/results")
+    fun getSavedAnalysisResult(
+        @PathVariable savedAnalysisId: UUID,
+        @RequestParam(defaultValue = "false") includeTilePredictions: Boolean
+    ): ResponseEntity<*> {
+        return try {
+            ResponseEntity.ok(analysisService.getSavedAnalysisResult(savedAnalysisId, includeTilePredictions))
+        } catch (e: AnalysisService.AnalysisProxyException) {
+            ResponseEntity.status(e.statusCode).body(mapOf("error" to e.message))
+        }
+    }
+
+    data class SavedAnalysisListResponse(val analyses: List<SavedAnalysisResponse>)
+
+    @GetMapping("/saved/image/{imageId}")
+    fun listSavedAnalyses(
+        @PathVariable imageId: String,
+        @RequestParam(defaultValue = "20") limit: Int
+    ): ResponseEntity<SavedAnalysisListResponse> =
+        ResponseEntity.ok(SavedAnalysisListResponse(analysisService.listSavedAnalysesForImage(imageId, limit)))
 
     @GetMapping("/heatmap/{jobId}")
     fun getHeatmap(@PathVariable jobId: String): ResponseEntity<Any> {

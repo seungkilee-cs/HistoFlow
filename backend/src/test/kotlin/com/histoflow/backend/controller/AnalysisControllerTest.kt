@@ -2,6 +2,8 @@ package com.histoflow.backend.controller
 
 import com.histoflow.backend.domain.analysis.AnalysisJobStatus
 import com.histoflow.backend.dto.analysis.AnalysisJobResponse
+import com.histoflow.backend.dto.analysis.SaveAnalysisRequest
+import com.histoflow.backend.dto.analysis.SavedAnalysisResponse
 import com.histoflow.backend.service.AnalysisService
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
@@ -17,6 +19,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.io.ByteArrayInputStream
+import java.time.Instant
 import java.util.UUID
 
 @WebMvcTest(controllers = [AnalysisController::class])
@@ -186,6 +189,107 @@ class AnalysisControllerTest {
     }
 
     @Test
+    fun `save endpoint persists completed analysis reference`() {
+        val request = SaveAnalysisRequest(
+            title = "Baseline run",
+            notes = "Initial saved result",
+            pinned = true
+        )
+        val saved = sampleSavedAnalysis(
+            title = "Baseline run",
+            notes = "Initial saved result",
+            pinned = true
+        )
+        given(analysisService.saveAnalysis("job-1", request)).willReturn(saved)
+
+        mockMvc.perform(
+            post("/api/v1/analysis/saved/job-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "title": "Baseline run",
+                      "notes": "Initial saved result",
+                      "pinned": true
+                    }
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(saved.id.toString()))
+            .andExpect(jsonPath("$.jobId").value("job-1"))
+            .andExpect(jsonPath("$.imageId").value("img-1"))
+            .andExpect(jsonPath("$.title").value("Baseline run"))
+            .andExpect(jsonPath("$.pinned").value(true))
+
+        verify(analysisService).saveAnalysis("job-1", request)
+    }
+
+    @Test
+    fun `saved analysis endpoint loads saved metadata`() {
+        val savedId = UUID.fromString("22222222-2222-2222-2222-222222222222")
+        val saved = sampleSavedAnalysis(id = savedId)
+        given(analysisService.getSavedAnalysis(savedId)).willReturn(saved)
+
+        mockMvc.perform(get("/api/v1/analysis/saved/$savedId"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(savedId.toString()))
+            .andExpect(jsonPath("$.jobId").value("job-1"))
+            .andExpect(jsonPath("$.summaryKey").value("img-1/summary.json"))
+
+        verify(analysisService).getSavedAnalysis(savedId)
+    }
+
+    @Test
+    fun `saved result endpoint loads lightweight result by default`() {
+        val savedId = UUID.fromString("22222222-2222-2222-2222-222222222222")
+        given(analysisService.getSavedAnalysisResult(savedId, false)).willReturn(
+            AnalysisService.AnalysisResultResponse(
+                imageId = "img-1",
+                tileLevel = 12,
+                summary = AnalysisService.AnalysisSummaryResponse(
+                    totalTiles = 100,
+                    tissueTiles = 80,
+                    skippedTiles = 20,
+                    flaggedTiles = 12,
+                    tumorAreaPercentage = 15.0,
+                    aggregateScore = 0.62,
+                    maxScore = 0.97,
+                    aggregationMethod = "mean",
+                    threshold = 0.5
+                ),
+                heatmapKey = "img-1/heatmap.png",
+                summaryKey = "img-1/summary.json",
+                resultsKey = "img-1/predictions.json",
+                tilePredictionsIncluded = false,
+                tilePredictions = emptyList()
+            )
+        )
+
+        mockMvc.perform(get("/api/v1/analysis/saved/$savedId/results"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.image_id").value("img-1"))
+            .andExpect(jsonPath("$.tile_predictions_included").value(false))
+            .andExpect(jsonPath("$.tile_predictions.length()").value(0))
+
+        verify(analysisService).getSavedAnalysisResult(savedId, false)
+    }
+
+    @Test
+    fun `saved analyses endpoint lists saved results for an image`() {
+        val saved = sampleSavedAnalysis()
+        given(analysisService.listSavedAnalysesForImage("img-1", 5)).willReturn(listOf(saved))
+
+        mockMvc.perform(get("/api/v1/analysis/saved/image/img-1").queryParam("limit", "5"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.analyses[0].id").value(saved.id.toString()))
+            .andExpect(jsonPath("$.analyses[0].jobId").value("job-1"))
+            .andExpect(jsonPath("$.analyses[0].imageId").value("img-1"))
+
+        verify(analysisService).listSavedAnalysesForImage("img-1", 5)
+    }
+
+    @Test
     fun `history endpoint returns completed jobs for image`() {
         val job = AnalysisJobResponse(
             id = UUID.randomUUID(),
@@ -212,5 +316,34 @@ class AnalysisControllerTest {
             .andExpect(jsonPath("$.jobs[0].jobId").value("job-1"))
             .andExpect(jsonPath("$.jobs[0].status").value("COMPLETED"))
             .andExpect(jsonPath("$.jobs[0].tumorAreaPercentage").value(18.4))
+    }
+
+    private fun sampleSavedAnalysis(
+        id: UUID = UUID.fromString("22222222-2222-2222-2222-222222222222"),
+        title: String? = "Baseline run",
+        notes: String? = "Initial saved result",
+        pinned: Boolean = false
+    ): SavedAnalysisResponse {
+        val timestamp = Instant.parse("2026-03-09T12:00:00Z")
+        return SavedAnalysisResponse(
+            id = id,
+            jobId = "job-1",
+            imageId = "img-1",
+            title = title,
+            notes = notes,
+            pinned = pinned,
+            status = AnalysisJobStatus.COMPLETED,
+            tileLevel = 12,
+            threshold = 0.5f,
+            tissueThreshold = 0.15f,
+            tumorAreaPercentage = 18.4,
+            aggregateScore = 0.712,
+            maxScore = 0.981,
+            heatmapKey = "img-1/heatmap.png",
+            summaryKey = "img-1/summary.json",
+            resultsKey = "img-1/predictions.json",
+            createdAt = timestamp,
+            updatedAt = timestamp
+        )
     }
 }

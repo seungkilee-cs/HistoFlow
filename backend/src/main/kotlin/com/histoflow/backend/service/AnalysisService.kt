@@ -7,17 +7,23 @@ import com.histoflow.backend.config.AnalysisProperties
 import com.histoflow.backend.config.MinioProperties
 import com.histoflow.backend.domain.analysis.AnalysisJobEntity
 import com.histoflow.backend.domain.analysis.AnalysisJobStatus
+import com.histoflow.backend.domain.analysis.SavedAnalysisEntity
 import com.histoflow.backend.dto.analysis.AnalysisJobResponse
+import com.histoflow.backend.dto.analysis.SaveAnalysisRequest
+import com.histoflow.backend.dto.analysis.SavedAnalysisResponse
 import com.histoflow.backend.repository.analysis.AnalysisJobRepository
+import com.histoflow.backend.repository.analysis.SavedAnalysisRepository
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 import java.io.InputStream
+import java.util.UUID
 
 @Service
 class AnalysisService(
@@ -26,6 +32,7 @@ class AnalysisService(
     private val s3Client: S3Client,
     private val minioProperties: MinioProperties,
     private val analysisJobRepository: AnalysisJobRepository,
+    private val savedAnalysisRepository: SavedAnalysisRepository,
     private val objectMapper: ObjectMapper
 ) {
     private val logger = LoggerFactory.getLogger(AnalysisService::class.java)
@@ -306,6 +313,57 @@ class AnalysisService(
         )
     }
 
+    @Transactional
+    fun saveAnalysis(jobId: String, request: SaveAnalysisRequest = SaveAnalysisRequest()): SavedAnalysisResponse {
+        val job = findJobOrThrow(jobId)
+        if (job.status != AnalysisJobStatus.COMPLETED) {
+            throw AnalysisProxyException(409, "Only completed analyses can be saved")
+        }
+
+        val saved = savedAnalysisRepository.findByAnalysisJobJobId(jobId).orElseGet {
+            SavedAnalysisEntity(
+                analysisJob = job,
+                imageId = job.imageId
+            )
+        }
+
+        saved.analysisJob = job
+        saved.imageId = job.imageId
+        if (request.title != null) {
+            saved.title = request.title.normalized(maxLength = 160)
+        }
+        if (request.notes != null) {
+            saved.notes = request.notes.normalized(maxLength = 2000)
+        }
+        saved.pinned = request.pinned ?: saved.pinned
+
+        return savedAnalysisRepository.save(saved).toSavedResponse()
+    }
+
+    @Transactional(readOnly = true)
+    fun getSavedAnalysis(savedAnalysisId: UUID): SavedAnalysisResponse =
+        findSavedAnalysisOrThrow(savedAnalysisId).toSavedResponse()
+
+    @Transactional(readOnly = true)
+    fun getSavedAnalysisResult(
+        savedAnalysisId: UUID,
+        includeTilePredictions: Boolean = false
+    ): AnalysisResultResponse {
+        val saved = findSavedAnalysisOrThrow(savedAnalysisId)
+        return getResults(saved.analysisJob.jobId, includeTilePredictions)
+    }
+
+    @Transactional(readOnly = true)
+    fun listSavedAnalysesForImage(
+        imageId: String,
+        limit: Int = DEFAULT_SAVED_ANALYSES_LIMIT
+    ): List<SavedAnalysisResponse> =
+        savedAnalysisRepository.findAllByImageIdOrderByPinnedDescUpdatedAtDesc(
+            imageId,
+            PageRequest.of(0, limit.coerceIn(1, MAX_SAVED_ANALYSES_LIMIT))
+        )
+            .map { it.toSavedResponse() }
+
     fun updateJob(jobId: String, update: AnalysisJobEventUpdate): AnalysisStatusResponse {
         val entity = findJobOrThrow(jobId)
 
@@ -392,6 +450,11 @@ class AnalysisService(
             .orElseThrow { AnalysisProxyException(404, "Analysis job not found: $jobId") }
     }
 
+    private fun findSavedAnalysisOrThrow(savedAnalysisId: UUID): SavedAnalysisEntity {
+        return savedAnalysisRepository.findById(savedAnalysisId)
+            .orElseThrow { AnalysisProxyException(404, "Saved analysis not found: $savedAnalysisId") }
+    }
+
     private fun defaultMessageForStatus(status: AnalysisJobStatus): String = when (status) {
         AnalysisJobStatus.PROCESSING -> "Analysis is in progress."
         AnalysisJobStatus.COMPLETED -> "Analysis complete."
@@ -463,8 +526,39 @@ class AnalysisService(
         errorMessage        = errorMessage
     )
 
+    private fun SavedAnalysisEntity.toSavedResponse(): SavedAnalysisResponse {
+        val job = analysisJob
+        return SavedAnalysisResponse(
+            id                  = id ?: error("Persisted saved analysis must have an id"),
+            jobId               = job.jobId,
+            imageId             = imageId,
+            title               = title,
+            notes               = notes,
+            pinned              = pinned,
+            status              = job.status,
+            tileLevel           = job.tileLevel,
+            threshold           = job.threshold,
+            tissueThreshold     = job.tissueThreshold,
+            tumorAreaPercentage = job.tumorAreaPercentage,
+            aggregateScore      = job.aggregateScore,
+            maxScore            = job.maxScore,
+            heatmapKey          = job.heatmapKey,
+            summaryKey          = job.summaryKey,
+            resultsKey          = job.resultsKey,
+            createdAt           = createdAt,
+            updatedAt           = updatedAt
+        )
+    }
+
+    private fun String?.normalized(maxLength: Int): String? =
+        this?.trim()
+            ?.take(maxLength)
+            ?.takeIf { it.isNotBlank() }
+
     companion object {
         private const val DEFAULT_HISTORY_LIMIT = 10
         private const val MAX_HISTORY_LIMIT = 100
+        private const val DEFAULT_SAVED_ANALYSES_LIMIT = 20
+        private const val MAX_SAVED_ANALYSES_LIMIT = 100
     }
 }
