@@ -1,0 +1,28 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:histoflow-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+
+minio:
+  endpoint: http://localhost:9000
+  public-endpoint: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  initialize-buckets: false
+  buckets:
+    tiles: histoflow-tiles
+    uploads: unprocessed-slides
+
+tiling:
+  base-url: http://localhost:8000
+  strategy: direct-http
+
+analysis:
+  base-url: http://localhost:8001
