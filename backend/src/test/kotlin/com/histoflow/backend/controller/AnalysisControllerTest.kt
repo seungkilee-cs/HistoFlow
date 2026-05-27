@@ -107,9 +107,9 @@ class AnalysisControllerTest {
             heatmapKey = "img-1/heatmap_level_12.png",
             errorMessage = null
         )
-        given(analysisService.getHistoryForImage("img-1")).willReturn(listOf(job))
+        given(analysisService.getHistoryForImage("img-1", 5)).willReturn(listOf(job))
 
-        mockMvc.perform(get("/api/v1/analysis/history/img-1"))
+        mockMvc.perform(get("/api/v1/analysis/history/img-1").queryParam("limit", "5"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.jobs[0].jobId").value("job-1"))
             .andExpect(jsonPath("$.jobs[0].status").value("COMPLETED"))

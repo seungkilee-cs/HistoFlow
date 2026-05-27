@@ -10,6 +10,7 @@ import com.histoflow.backend.domain.analysis.AnalysisJobStatus
 import com.histoflow.backend.dto.analysis.AnalysisJobResponse
 import com.histoflow.backend.repository.analysis.AnalysisJobRepository
 import org.slf4j.LoggerFactory
+import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
@@ -322,9 +323,11 @@ class AnalysisService(
     fun getHeatmapKey(jobId: String): String? =
         analysisJobRepository.findByJobId(jobId).map { it.heatmapKey }.orElse(null)
 
-    fun getHistoryForImage(imageId: String): List<AnalysisJobResponse> =
-        analysisJobRepository.findAllByImageId(imageId)
-            .sortedByDescending { it.createdAt }
+    fun getHistoryForImage(imageId: String, limit: Int = DEFAULT_HISTORY_LIMIT): List<AnalysisJobResponse> =
+        analysisJobRepository.findAllByImageIdOrderByCreatedAtDesc(
+            imageId,
+            PageRequest.of(0, limit.coerceIn(1, MAX_HISTORY_LIMIT))
+        )
             .map { it.toResponse() }
 
     fun getHeatmapObject(heatmapKey: String): InputStream {
@@ -424,4 +427,9 @@ class AnalysisService(
         heatmapKey          = heatmapKey,
         errorMessage        = errorMessage
     )
+
+    companion object {
+        private const val DEFAULT_HISTORY_LIMIT = 10
+        private const val MAX_HISTORY_LIMIT = 100
+    }
 }

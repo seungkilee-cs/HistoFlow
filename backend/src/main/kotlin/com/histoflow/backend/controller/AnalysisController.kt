@@ -80,8 +80,11 @@ class AnalysisController(
     data class AnalysisHistoryResponse(val jobs: List<AnalysisJobResponse>)
 
     @GetMapping("/history/{imageId}")
-    fun getHistory(@PathVariable imageId: String): ResponseEntity<AnalysisHistoryResponse> =
-        ResponseEntity.ok(AnalysisHistoryResponse(analysisService.getHistoryForImage(imageId)))
+    fun getHistory(
+        @PathVariable imageId: String,
+        @RequestParam(defaultValue = "10") limit: Int
+    ): ResponseEntity<AnalysisHistoryResponse> =
+        ResponseEntity.ok(AnalysisHistoryResponse(analysisService.getHistoryForImage(imageId, limit)))
 }
 
 data class AnalysisJobEventRequest(
