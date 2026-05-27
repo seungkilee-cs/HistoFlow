@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
+import jakarta.persistence.Index
 import jakarta.persistence.Lob
 import jakarta.persistence.PrePersist
 import jakarta.persistence.PreUpdate
@@ -15,7 +16,13 @@ import java.time.Instant
 import java.util.UUID
 
 @Entity
-@Table(name = "tiling_jobs")
+@Table(
+    name = "tiling_jobs",
+    indexes = [
+        Index(name = "idx_tiling_jobs_status_updated", columnList = "status, updated_at"),
+        Index(name = "idx_tiling_jobs_stage", columnList = "stage")
+    ]
+)
 class TilingJobEntity(
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
