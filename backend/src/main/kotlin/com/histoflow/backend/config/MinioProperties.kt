@@ -8,6 +8,7 @@ data class MinioProperties(
     var publicEndpoint: String = "",
     var accessKey: String = "",
     var secretKey: String = "",
+    var initializeBuckets: Boolean = true,
     val buckets: Buckets = Buckets()
 ) {
     data class Buckets(

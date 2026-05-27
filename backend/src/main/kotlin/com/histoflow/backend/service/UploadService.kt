@@ -6,12 +6,9 @@ import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse
 import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest
-import software.amazon.awssdk.services.s3.model.CreateBucketRequest
 import software.amazon.awssdk.services.s3.model.CompletedPart
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest
-import software.amazon.awssdk.services.s3.model.HeadBucketRequest
-import software.amazon.awssdk.services.s3.model.NoSuchBucketException
 import software.amazon.awssdk.services.s3.presigner.S3Presigner
 import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest
 import software.amazon.awssdk.services.s3.model.UploadPartRequest
@@ -25,7 +22,6 @@ class UploadService(private val s3Client: S3Client, private val s3Presigner: S3P
         val imageId = UUID.randomUUID().toString()
         val resolvedDatasetName = datasetName?.takeIf { it.isNotBlank() } ?: filename
         val key = "uploads/$imageId-$filename"
-        ensureBucketExists(props.buckets.uploads)
         val req = CreateMultipartUploadRequest.builder()
             // For raw slide uploads we want to store the parts in the 'uploads' bucket
             // (configured as minio.buckets.uploads -> unprocessed-slides). Use that
@@ -84,22 +80,6 @@ class UploadService(private val s3Client: S3Client, private val s3Presigner: S3P
             .uploadId(uploadId)
             .build()
         s3Client.abortMultipartUpload(req)
-    }
-
-    private fun ensureBucketExists(bucketName: String) {
-        try {
-            s3Client.headBucket(
-                HeadBucketRequest.builder()
-                    .bucket(bucketName)
-                    .build()
-            )
-        } catch (_: NoSuchBucketException) {
-            s3Client.createBucket(
-                CreateBucketRequest.builder()
-                    .bucket(bucketName)
-                    .build()
-            )
-        }
     }
 
 }

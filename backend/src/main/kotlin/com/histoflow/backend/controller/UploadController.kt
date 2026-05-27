@@ -2,9 +2,6 @@ package com.histoflow.backend.controller
 
 import com.histoflow.backend.config.MinioProperties
 import com.histoflow.backend.service.TilingTriggerService
-import io.minio.BucketExistsArgs
-import io.minio.MakeBucketArgs
-import io.minio.MinioClient
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -79,7 +76,6 @@ data class CompleteUploadResponse(
 @RestController
 @RequestMapping("/api/v1/uploads")
 class UploadController(
-    private val minioClient: MinioClient,
     private val tilingTriggerService: TilingTriggerService,
     private val minioProperties: MinioProperties,
     private val s3Presigner: S3Presigner
@@ -116,9 +112,6 @@ class UploadController(
             val imageId = UUID.randomUUID().toString()
             val objectName = "$imageId/${request.fileName}"
             val datasetName = request.datasetName?.takeIf { it.isNotBlank() } ?: request.fileName
-
-            // Ensure bucket exists (in production, we do this at startup)
-            ensureBucketExists(bucketName)
 
             // Generate pre-signed URL for PUT operation
             logger.debug("Generating pre-signed URL for object: {}", objectName)
@@ -252,32 +245,6 @@ class UploadController(
                     message = "Internal server error: ${e.message}"
                 )
             )
-        }
-    }
-
-
-    /**
-     * Ensure MinIO bucket exists, create if not
-     * 
-     * @param bucketName Name of the bucket to check/create
-     */
-    private fun ensureBucketExists(bucketName: String) {
-        val exists = minioClient.bucketExists(
-            BucketExistsArgs.builder()
-                .bucket(bucketName)
-                .build()
-        )
-        
-        if (!exists) {
-            logger.info("Creating bucket: {}", bucketName)
-            minioClient.makeBucket(
-                MakeBucketArgs.builder()
-                    .bucket(bucketName)
-                    .build()
-            )
-            logger.info("Bucket '{}' created successfully", bucketName)
-        } else {
-            logger.debug("Bucket '{}' already exists", bucketName)
         }
     }
 }
