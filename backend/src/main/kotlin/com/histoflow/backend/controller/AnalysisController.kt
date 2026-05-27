@@ -50,10 +50,33 @@ class AnalysisController(
     }
 
     @GetMapping("/results/{jobId}")
-    fun getResults(@PathVariable jobId: String): ResponseEntity<*> {
+    fun getResults(
+        @PathVariable jobId: String,
+        @RequestParam(defaultValue = "true") includeTilePredictions: Boolean
+    ): ResponseEntity<*> {
         return try {
-            val results = analysisService.getResults(jobId)
+            val results = analysisService.getResults(jobId, includeTilePredictions)
             ResponseEntity.ok(results)
+        } catch (e: AnalysisService.AnalysisProxyException) {
+            ResponseEntity.status(e.statusCode).body(mapOf("error" to e.message))
+        }
+    }
+
+    @GetMapping("/summary/{jobId}")
+    fun getSummary(@PathVariable jobId: String): ResponseEntity<*> {
+        return try {
+            val results = analysisService.getResults(jobId, includeTilePredictions = false)
+            ResponseEntity.ok(results)
+        } catch (e: AnalysisService.AnalysisProxyException) {
+            ResponseEntity.status(e.statusCode).body(mapOf("error" to e.message))
+        }
+    }
+
+    @GetMapping("/artifacts/{jobId}")
+    fun getArtifacts(@PathVariable jobId: String): ResponseEntity<*> {
+        return try {
+            val artifacts = analysisService.getArtifacts(jobId)
+            ResponseEntity.ok(artifacts)
         } catch (e: AnalysisService.AnalysisProxyException) {
             ResponseEntity.status(e.statusCode).body(mapOf("error" to e.message))
         }

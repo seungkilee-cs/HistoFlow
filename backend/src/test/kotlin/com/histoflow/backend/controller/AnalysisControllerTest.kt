@@ -90,6 +90,102 @@ class AnalysisControllerTest {
     }
 
     @Test
+    fun `results endpoint can skip tile predictions`() {
+        given(analysisService.getResults("job-1", false)).willReturn(
+            AnalysisService.AnalysisResultResponse(
+                imageId = "img-1",
+                tileLevel = 12,
+                summary = AnalysisService.AnalysisSummaryResponse(
+                    totalTiles = 100,
+                    tissueTiles = 80,
+                    skippedTiles = 20,
+                    flaggedTiles = 12,
+                    tumorAreaPercentage = 15.0,
+                    aggregateScore = 0.62,
+                    maxScore = 0.97,
+                    aggregationMethod = "mean",
+                    threshold = 0.5
+                ),
+                heatmapKey = "img-1/heatmap.png",
+                summaryKey = "img-1/summary.json",
+                resultsKey = "img-1/predictions.json",
+                tilePredictionsIncluded = false,
+                tilePredictions = emptyList()
+            )
+        )
+
+        mockMvc.perform(
+            get("/api/v1/analysis/results/job-1")
+                .queryParam("includeTilePredictions", "false")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.image_id").value("img-1"))
+            .andExpect(jsonPath("$.tile_predictions_included").value(false))
+            .andExpect(jsonPath("$.tile_predictions.length()").value(0))
+            .andExpect(jsonPath("$.summary.tumor_area_percentage").value(15.0))
+
+        verify(analysisService).getResults("job-1", false)
+    }
+
+    @Test
+    fun `summary endpoint returns lightweight analysis result`() {
+        given(analysisService.getResults("job-1", false)).willReturn(
+            AnalysisService.AnalysisResultResponse(
+                imageId = "img-1",
+                tileLevel = 12,
+                summary = AnalysisService.AnalysisSummaryResponse(
+                    totalTiles = 100,
+                    tissueTiles = 80,
+                    skippedTiles = 20,
+                    flaggedTiles = 12,
+                    tumorAreaPercentage = 15.0,
+                    aggregateScore = 0.62,
+                    maxScore = 0.97,
+                    aggregationMethod = "mean",
+                    threshold = 0.5
+                ),
+                heatmapKey = "img-1/heatmap.png",
+                summaryKey = "img-1/summary.json",
+                resultsKey = "img-1/predictions.json",
+                tilePredictionsIncluded = false,
+                tilePredictions = emptyList()
+            )
+        )
+
+        mockMvc.perform(get("/api/v1/analysis/summary/job-1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.image_id").value("img-1"))
+            .andExpect(jsonPath("$.tile_predictions_included").value(false))
+            .andExpect(jsonPath("$.tile_predictions.length()").value(0))
+            .andExpect(jsonPath("$.summary.tumor_area_percentage").value(15.0))
+
+        verify(analysisService).getResults("job-1", false)
+    }
+
+    @Test
+    fun `artifacts endpoint returns object keys without result payloads`() {
+        given(analysisService.getArtifacts("job-1")).willReturn(
+            AnalysisService.AnalysisArtifactsResponse(
+                jobId = "job-1",
+                imageId = "img-1",
+                status = AnalysisJobStatus.COMPLETED,
+                heatmapKey = "img-1/heatmap.png",
+                summaryKey = "img-1/summary.json",
+                resultsKey = "img-1/predictions.json"
+            )
+        )
+
+        mockMvc.perform(get("/api/v1/analysis/artifacts/job-1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.job_id").value("job-1"))
+            .andExpect(jsonPath("$.image_id").value("img-1"))
+            .andExpect(jsonPath("$.summary_key").value("img-1/summary.json"))
+            .andExpect(jsonPath("$.results_key").value("img-1/predictions.json"))
+
+        verify(analysisService).getArtifacts("job-1")
+    }
+
+    @Test
     fun `history endpoint returns completed jobs for image`() {
         val job = AnalysisJobResponse(
             id = UUID.randomUUID(),
@@ -105,6 +201,8 @@ class AnalysisControllerTest {
             aggregateScore = 0.712,
             maxScore = 0.981,
             heatmapKey = "img-1/heatmap_level_12.png",
+            summaryKey = "img-1/summary.json",
+            resultsKey = "img-1/predictions.json",
             errorMessage = null
         )
         given(analysisService.getHistoryForImage("img-1", 5)).willReturn(listOf(job))

@@ -128,8 +128,24 @@ class AnalysisService(
         @JsonProperty("results_key")
         val resultsKey: String? = null,
         val timings: Map<String, Double>? = null,
+        @JsonProperty("tile_predictions_included")
+        val tilePredictionsIncluded: Boolean = true,
         @JsonProperty("tile_predictions")
         val tilePredictions: List<TilePredictionResponse> = emptyList()
+    )
+
+    data class AnalysisArtifactsResponse(
+        @JsonProperty("job_id")
+        val jobId: String,
+        @JsonProperty("image_id")
+        val imageId: String,
+        val status: AnalysisJobStatus,
+        @JsonProperty("heatmap_key")
+        val heatmapKey: String? = null,
+        @JsonProperty("summary_key")
+        val summaryKey: String? = null,
+        @JsonProperty("results_key")
+        val resultsKey: String? = null
     )
 
     data class AnalysisJobEventUpdate(
@@ -241,7 +257,7 @@ class AnalysisService(
         )
     }
 
-    fun getResults(jobId: String): AnalysisResultResponse {
+    fun getResults(jobId: String, includeTilePredictions: Boolean = true): AnalysisResultResponse {
         val entity = findJobOrThrow(jobId)
 
         when (entity.status) {
@@ -258,7 +274,11 @@ class AnalysisService(
             ?: throw AnalysisProxyException(500, "Analysis completed without a summary artifact")
         val storedSummary = readJsonObject(summaryKey, StoredAnalysisSummary::class.java)
         val resolvedResultsKey = entity.resultsKey ?: storedSummary.tilePredictionsKey
-        val predictions = resolvedResultsKey?.let { readJsonList(it, tilePredictionListType) }.orEmpty()
+        val predictions = if (includeTilePredictions) {
+            resolvedResultsKey?.let { readJsonList(it, tilePredictionListType) }.orEmpty()
+        } else {
+            emptyList()
+        }
 
         return AnalysisResultResponse(
             imageId = storedSummary.imageId,
@@ -269,7 +289,20 @@ class AnalysisService(
             summaryKey = entity.summaryKey,
             resultsKey = resolvedResultsKey,
             timings = storedSummary.timings,
+            tilePredictionsIncluded = includeTilePredictions,
             tilePredictions = predictions
+        )
+    }
+
+    fun getArtifacts(jobId: String): AnalysisArtifactsResponse {
+        val entity = findJobOrThrow(jobId)
+        return AnalysisArtifactsResponse(
+            jobId = entity.jobId,
+            imageId = entity.imageId,
+            status = entity.status,
+            heatmapKey = entity.heatmapKey,
+            summaryKey = entity.summaryKey,
+            resultsKey = entity.resultsKey
         )
     }
 
@@ -425,6 +458,8 @@ class AnalysisService(
         aggregateScore      = aggregateScore,
         maxScore            = maxScore,
         heatmapKey          = heatmapKey,
+        summaryKey          = summaryKey,
+        resultsKey          = resultsKey,
         errorMessage        = errorMessage
     )
 
