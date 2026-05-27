@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # Worker Settings
     TEMP_STORAGE_PATH: str = "/tmp/histoflow_tiling"
     BACKEND_INTERNAL_BASE_URL: Optional[str] = None
+    UPLOAD_WORKERS: int = 16
 
 # Create a single, importable instance of the settings
 settings = Settings()

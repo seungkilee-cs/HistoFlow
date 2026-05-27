@@ -16,10 +16,6 @@ from minio import Minio
 
 from .config import settings
 
-# Number of parallel tile upload threads.  16 gives a good balance between
-# throughput and MinIO connection-pool pressure.
-_UPLOAD_WORKERS = 16
-
 
 class TilingService:
     def __init__(self):
@@ -242,7 +238,8 @@ class TilingService:
     ) -> Tuple[int, int]:
         """Upload the tile directory to MinIO using a thread pool."""
         bucket = settings.MINIO_UPLOAD_BUCKET
-        print(f"Uploading tiles to bucket '{bucket}' with {_UPLOAD_WORKERS} workers...")
+        upload_workers = max(1, settings.UPLOAD_WORKERS)
+        print(f"Uploading tiles to bucket '{bucket}' with {upload_workers} workers...")
 
         file_paths = sorted(p for p in tiles_dir.rglob("*") if p.is_file())
         total_files = len(file_paths)
@@ -275,7 +272,7 @@ class TilingService:
             self.minio_client.fput_object(bucket, object_name, str(file_path))
             return file_path.stat().st_size
 
-        with ThreadPoolExecutor(max_workers=_UPLOAD_WORKERS) as executor:
+        with ThreadPoolExecutor(max_workers=upload_workers) as executor:
             futures = {executor.submit(upload_one, fp): fp for fp in file_paths}
             for future in as_completed(futures):
                 size = future.result()  # propagates any upload exception
