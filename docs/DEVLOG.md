@@ -156,6 +156,69 @@ explicitly rather than implying everything was verified end-to-end.
 
 ---
 
-*Next up (Sprint 2): the security foundation — externalize secrets (PR 5), authenticate the internal
-callbacks (PR 6), and scope the SSE stream (PR 7). This is the highest-leverage work: until the API
-is authenticated, every other safeguard is moot.*
+## Sprint 2 — Security foundation
+
+The highest-leverage work: until the API is authenticated, every other safeguard is moot. Four PRs,
+all verified locally.
+
+| Branch | Roadmap PR | What landed |
+|--------|-----------|-------------|
+| `security/externalize-secrets` | 5 | env-placeholder credentials, no committed secrets in app config |
+| `security/internal-callback-auth` | 6 | shared-secret guard on the internal callbacks |
+| `security/api-auth-jwt` | 8 | self-issued HS256 JWT auth on the public API |
+| `security/tenant-scoped-sse` | 7 | per-tenant SSE delivery (depends on 8) |
+
+**Mid-sprint unlock: a JDK appeared.** Sprint 1 shipped the Kotlin changes unverified-locally (no
+Java runtime), leaning on CI. Partway through Sprint 2 I found Homebrew's OpenJDK 17 installed but
+unlinked — the backend's exact toolchain. From that point every backend PR was **compiled and tested
+locally** before pushing. That mattered immediately (see PR 8).
+
+**PR 5 — Externalize secrets.** The deployment-shaped `application.yml` carried live DB and MinIO
+credentials. Replaced the actual secrets (`POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`) with *required*
+env placeholders — no default, so the app fails fast if unset — while non-secret fields keep
+local-dev defaults. Compose creds became overridable interpolation so the dev stack still runs
+zero-config. Verified the test profile shadows the file (backend suite stayed green).
+*Why it matters:* the config a deployment consumes no longer leaks a secret, and prod is forced to
+inject real ones.
+
+**PR 6 — Authenticate the internal callbacks.** The `/api/v1/internal/` endpoints — which let a
+caller set job state and repoint result artifacts — were wide open. Added a constant-time
+`X-Internal-Token` filter scoped to that URL space, fail-closed when unconfigured, with the tiling
+and region-detector services sending the token. A KDoc containing a wildcard internal path initially
+broke the build: Kotlin supports *nested* block comments, so the `/` `*` inside the path opened a
+comment the KDoc's close then consumed — leaving the real comment unterminated. Caught and fixed
+locally.
+*Why it matters:* the result a clinician would read can no longer be forged by an unauthenticated
+caller.
+
+**PR 8 — JWT auth on the public API.** Added self-issued HS256 JWT auth (no external IdP): a stateless
+resource-server filter chain, a `/api/v1/auth/login` that mints a token with a subject and tenant
+claim, and overridable dev credentials. The local test caught a real bug immediately:
+`NimbusJwtEncoder` defaults to RS256 and couldn't sign with the symmetric key
+("Failed to select a JWK signing key") — fixed by setting the HS256 JWS header explicitly. This is
+the payoff of the JDK find: that bug would otherwise have shipped to CI. Existing controller slice
+tests were kept green by disabling their security filters (`addFilters = false`); the token logic and
+full-context wiring are covered by dedicated tests.
+*Why it matters:* the platform now has an identity boundary — the prerequisite for tenancy, audit,
+and per-user scoping.
+
+**PR 7 — Per-tenant SSE.** With the stream now authenticated, partitioned event delivery by tenant:
+a tenant column on the tiling job (captured from the JWT at creation), a `TenantContext` that reads
+the tenant claim, and a tenant-keyed emitter registry that publishes a job event only to its tenant's
+subscribers. `registerEmitter()` kept its signature (reads the tenant internally), so the controller
+and its test were untouched.
+*Why it matters:* one tenant's job activity is no longer broadcast to every connected client.
+
+### Honest scope boundaries
+
+- **PR 7 is the *minimum* tenant tagging the SSE objective needs** — not the full domain model. The
+  `Patient`/`Case`/`Slide` entities, Flyway migrations to backfill the tenant column, and
+  tenant-scoping of the REST read paths remain as data-model roadmap items.
+- **Auth is enforced on `/api/v1/`, so the running app needs a frontend token integration**
+  (login + `Authorization` header, OSD `ajaxHeaders` for tiles) before it works end-to-end. That
+  frontend companion is the required next step. CI is unaffected (integration smoke hits only
+  permitAll health; frontend tests mock fetch).
+
+*Sprint 2 demonstrates the security and identity layer of the platform: secret hygiene, service-to-
+service auth, user auth, and the first slice of tenancy — each as an independently-reviewable,
+locally-verified PR.*
