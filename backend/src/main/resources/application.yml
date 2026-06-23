@@ -6,10 +6,12 @@ spring:
     name: histoflow-backend
   
   datasource:
-    url: jdbc:postgresql://localhost:5432/histoflow
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/histoflow}
     driver-class-name: org.postgresql.Driver
-    username: histoflow
-    password: histoflow123
+    username: ${POSTGRES_USER:histoflow}
+    # Secret: supplied via environment (see .env.example). No committed default —
+    # the app fails fast on startup if it is unset.
+    password: ${POSTGRES_PASSWORD}
 
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
@@ -19,10 +21,11 @@ spring:
 
 # MinIO Configuration (S3-compatible object storage)
 minio:
-  endpoint: http://minio:9000          # internal (Docker network)
-  public-endpoint: http://localhost:9000
-  access-key: minioadmin
-  secret-key: minioadmin
+  endpoint: ${MINIO_ENDPOINT:http://minio:9000}          # internal (Docker network)
+  public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ROOT_USER:minioadmin}
+  # Secret: supplied via environment (see .env.example). No committed default.
+  secret-key: ${MINIO_ROOT_PASSWORD}
   buckets:
     tiles: histoflow-tiles
     uploads: unprocessed-slides
