@@ -29,6 +29,7 @@ services:
       context: ../backend
     environment:
       SPRING_APPLICATION_JSON: '{"spring":{"datasource":{"url":"jdbc:postgresql://postgres:5432/histoflow","username":"histoflow","password":"histoflow123","driver-class-name":"org.postgresql.Driver"},"jpa":{"database-platform":"org.hibernate.dialect.PostgreSQLDialect"},"jackson":{"serialization":{"write-dates-as-timestamps":false}}},"minio":{"endpoint":"http://minio:9000","public-endpoint":"${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}","access-key":"minioadmin","secret-key":"minioadmin","buckets":{"tiles":"histoflow-tiles","uploads":"unprocessed-slides"}},"tiling":{"base-url":"http://tiling:8000","strategy":"direct-http"}}'
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-dev-internal-token}
     depends_on:
       - postgres
       - minio
@@ -40,6 +41,7 @@ services:
       - ../services/tiling/.env
     environment:
       BACKEND_INTERNAL_BASE_URL: http://backend:8080
+      BACKEND_INTERNAL_TOKEN: ${INTERNAL_API_TOKEN:-dev-internal-token}
       MINIO_ENDPOINT: minio:9000
       MINIO_SECURE: "false"
     depends_on:

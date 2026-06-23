@@ -1,6 +1,7 @@
 package com.histoflow.backend
 
 import com.histoflow.backend.config.AnalysisProperties
+import com.histoflow.backend.config.InternalSecurityProperties
 import com.histoflow.backend.config.MinioProperties
 import com.histoflow.backend.config.TilingProperties
 import org.springframework.boot.autoconfigure.SpringBootApplication
@@ -9,7 +10,12 @@ import org.springframework.boot.runApplication
 
 @SpringBootApplication
 @EnableConfigurationProperties(
-    value = [MinioProperties::class, TilingProperties::class, AnalysisProperties::class]
+    value = [
+        MinioProperties::class,
+        TilingProperties::class,
+        AnalysisProperties::class,
+        InternalSecurityProperties::class
+    ]
 )
 class HistoFlowBackendApplication
 

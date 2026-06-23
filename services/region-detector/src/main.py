@@ -11,6 +11,7 @@ GET  /health            Health-check
 from __future__ import annotations
 
 import json
+import os
 import threading
 import traceback
 import uuid
@@ -276,10 +277,14 @@ def _notify_job_event(job_id: str, payload: Dict[str, Any]) -> None:
         f"{settings.BACKEND_INTERNAL_BASE_URL.rstrip('/')}"
         f"/api/v1/internal/analysis/jobs/{job_id}/events"
     )
+    headers = {"Content-Type": "application/json"}
+    token = os.environ.get("BACKEND_INTERNAL_TOKEN", "dev-internal-token")
+    if token:
+        headers["X-Internal-Token"] = token
     req = request.Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

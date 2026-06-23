@@ -26,3 +26,6 @@ tiling:
 
 analysis:
   base-url: http://localhost:8001
+
+internal:
+  api-token: test-internal-token

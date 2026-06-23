@@ -187,10 +187,14 @@ class TilingService:
             "activityEntries": activity_entries or [],
         }
         body = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        token = os.environ.get("BACKEND_INTERNAL_TOKEN", "dev-internal-token")
+        if token:
+            headers["X-Internal-Token"] = token
         req = request.Request(
             endpoint,
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         try:
