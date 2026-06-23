@@ -87,7 +87,7 @@ class MultipartUploadController(
                 )
             )
         } catch (ex: Exception) {
-            ex.printStackTrace()
+            logger.error("Multipart initiate failed", ex)
             ResponseEntity.internalServerError().build()
         }
     }
@@ -101,7 +101,7 @@ class MultipartUploadController(
             }
             ResponseEntity.ok(PresignResponse(urls))
         } catch (ex: Exception) {
-            ex.printStackTrace()
+            logger.error("Multipart presign failed", ex)
             ResponseEntity.internalServerError().build()
         }
     }
@@ -139,7 +139,7 @@ class MultipartUploadController(
             )
 
         } catch (ex: Exception) {
-            ex.printStackTrace()
+            logger.error("Multipart complete failed", ex)
             ResponseEntity.internalServerError().build()
         }
     }
@@ -150,7 +150,7 @@ class MultipartUploadController(
             uploadService.abortMultipartUpload(req.uploadId, req.key)
             ResponseEntity.ok().build()
         } catch (ex: Exception) {
-            ex.printStackTrace()
+            logger.error("Multipart abort failed", ex)
             ResponseEntity.internalServerError().build()
         }
     }

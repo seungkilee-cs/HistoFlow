@@ -69,8 +69,14 @@ class TileController(private val tileService: TileService) {
         @PathVariable level: Int,
         @PathVariable coord: String
     ): ResponseEntity<StreamingResponseBody> {
-        // Parse "x_y" format from URL
-        val (x, y) = coord.split("_").map { it.toInt() }
+        // Parse "x_y" format from URL, returning 404 on malformed coordinates
+        val parts = coord.split("_")
+        val x = parts.getOrNull(0)?.toIntOrNull()
+        val y = parts.getOrNull(1)?.toIntOrNull()
+        if (parts.size != 2 || x == null || y == null) {
+            logger.warn("Malformed tile coordinate: imageId={}, level={}, coord={}", imageId, level, coord)
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build()
+        }
         logger.debug("Tile requested: imageId={}, level={}, x={}, y={}", imageId, level, x, y)
 
         return try {
