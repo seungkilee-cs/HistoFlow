@@ -1,0 +1,71 @@
+name: Integration CI
+
+# Brings up the base stack (postgres, minio, backend, tiling) under the
+# `ci` compose profile and smoke-checks the service health endpoints.
+# Heavy (builds the backend + tiling images), so it runs on PRs targeting
+# master and on demand, not on every push.
+#
+# The ML analysis service (region-detector) pulls PyTorch + DINOv2 (multi-GB,
+# several minutes) and is exercised via the `ml` overlay in a manual run
+# rather than here — see docker/docker-compose.ml.yml and ROADMAP epic D.
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap tiling service env
+        run: cp services/tiling/.env.example services/tiling/.env
+
+      - name: Bring up base stack (ci profile)
+        working-directory: docker
+        run: |
+          docker compose \
+            -f docker-compose.base.yml \
+            -f docker-compose.ci.yml \
+            --profile ci up -d --build
+
+      - name: Wait for backend health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/api/v1/health | grep -q '"status":"UP"'; then
+              echo "Backend healthy."
+              exit 0
+            fi
+            echo "waiting for backend ($i)..."
+            sleep 5
+          done
+          echo "Backend did not become healthy in time." >&2
+          exit 1
+
+      - name: Smoke-check service endpoints
+        run: |
+          curl -fsS http://localhost:8080/api/v1/health
+          curl -fsS http://localhost:8000/health
+          curl -fsS http://localhost:9000/minio/health/live
+
+      - name: Dump compose logs on failure
+        if: failure()
+        working-directory: docker
+        run: |
+          docker compose \
+            -f docker-compose.base.yml \
+            -f docker-compose.ci.yml \
+            --profile ci logs --no-color
+
+      - name: Tear down
+        if: always()
+        working-directory: docker
+        run: |
+          docker compose \
+            -f docker-compose.base.yml \
+            -f docker-compose.ci.yml \
+            --profile ci down -v

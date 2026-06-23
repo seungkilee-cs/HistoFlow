@@ -1,0 +1,29 @@
+name: Lint
+
+# Repo-wide static checks that don't belong to a single service.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck shell scripts
+        run: |
+          shopt -s globstar nullglob
+          files=(dev.sh scripts/**/*.sh docker/**/*.sh)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No shell scripts found."
+            exit 0
+          fi
+          printf 'Checking: %s\n' "${files[@]}"
+          # Fail only on errors; warnings are surfaced but non-blocking.
+          shellcheck -S error "${files[@]}"
