@@ -26,3 +26,10 @@ tiling:
 
 analysis:
   base-url: http://localhost:8001
+
+security:
+  jwt-secret: test-only-secret-test-only-secret-0123456789
+  jwt-ttl-minutes: 60
+  dev-username: tester
+  dev-password: test-password
+  default-tenant: test-tenant

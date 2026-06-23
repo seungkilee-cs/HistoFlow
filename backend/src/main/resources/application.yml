@@ -33,6 +33,15 @@ tiling:
 analysis:
   base-url: http://localhost:8001
 
+# Authentication: self-issued HS256 JWT. Override the secret and dev
+# credentials via environment variables in any shared/prod environment.
+security:
+  jwt-secret: ${JWT_SECRET:dev-only-jwt-secret-change-me-0123456789abcdef}
+  jwt-ttl-minutes: ${JWT_TTL_MINUTES:120}
+  dev-username: ${AUTH_USERNAME:histoflow}
+  dev-password: ${AUTH_PASSWORD:histoflow}
+  default-tenant: ${DEFAULT_TENANT:default}
+
 # Logging Configuration
 logging:
   level:
