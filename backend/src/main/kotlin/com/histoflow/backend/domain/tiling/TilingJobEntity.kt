@@ -20,7 +20,8 @@ import java.util.UUID
     name = "tiling_jobs",
     indexes = [
         Index(name = "idx_tiling_jobs_status_updated", columnList = "status, updated_at"),
-        Index(name = "idx_tiling_jobs_stage", columnList = "stage")
+        Index(name = "idx_tiling_jobs_stage", columnList = "stage"),
+        Index(name = "idx_tiling_jobs_tenant", columnList = "tenant")
     ]
 )
 class TilingJobEntity(
@@ -33,6 +34,12 @@ class TilingJobEntity(
 
     @Column(nullable = true)
     var datasetName: String? = null,
+
+    // Owning tenant, captured from the authenticated principal at creation.
+    // Nullable for rows created before tenant scoping; treated as the default
+    // tenant at runtime. A backfilling migration belongs with Flyway adoption.
+    @Column(nullable = true)
+    var tenant: String? = null,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

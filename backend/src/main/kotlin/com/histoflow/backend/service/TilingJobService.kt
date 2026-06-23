@@ -2,6 +2,7 @@ package com.histoflow.backend.service
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.histoflow.backend.config.TenantContext
 import com.histoflow.backend.domain.tiling.TilingJobEntity
 import com.histoflow.backend.domain.tiling.TilingJobStage
 import com.histoflow.backend.domain.tiling.TilingJobStatus
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 data class TilingJobEventUpdate(
@@ -32,7 +34,7 @@ class TilingJobService(
     private val objectMapper: ObjectMapper
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val emitters = CopyOnWriteArrayList<SseEmitter>()
+    private val emittersByTenant = ConcurrentHashMap<String, CopyOnWriteArrayList<SseEmitter>>()
     private val activityEntryType = object : TypeReference<List<TilingJobActivityEntry>>() {}
 
     fun createQueuedJob(imageId: String, datasetName: String?): TilingJobStatusResponse {
@@ -48,6 +50,7 @@ class TilingJobService(
         }
 
         entity.datasetName = datasetName ?: entity.datasetName
+        entity.tenant = entity.tenant ?: TenantContext.currentTenant()
         entity.status = TilingJobStatus.IN_PROGRESS
         entity.stage = TilingJobStage.QUEUED
         entity.message = queuedMessage
@@ -64,7 +67,7 @@ class TilingJobService(
         )
 
         val saved = tilingJobRepository.save(entity).toResponse()
-        publish(saved)
+        publish(saved, entity.tenant ?: TenantContext.DEFAULT_TENANT)
         return saved
     }
 
@@ -125,7 +128,7 @@ class TilingJobService(
         )
 
         val saved = tilingJobRepository.save(entity).toResponse()
-        publish(saved)
+        publish(saved, entity.tenant ?: TenantContext.DEFAULT_TENANT)
         return saved
     }
 
@@ -148,16 +151,18 @@ class TilingJobService(
     }
 
     fun registerEmitter(): SseEmitter {
+        val tenant = TenantContext.currentTenant()
         val emitter = SseEmitter(0L)
-        emitters.add(emitter)
+        val list = emittersByTenant.computeIfAbsent(tenant) { CopyOnWriteArrayList() }
+        list.add(emitter)
 
-        emitter.onCompletion { emitters.remove(emitter) }
+        emitter.onCompletion { list.remove(emitter) }
         emitter.onTimeout {
-            emitters.remove(emitter)
+            list.remove(emitter)
             emitter.complete()
         }
         emitter.onError {
-            emitters.remove(emitter)
+            list.remove(emitter)
             emitter.complete()
         }
 
@@ -169,15 +174,20 @@ class TilingJobService(
             )
         } catch (ex: IOException) {
             logger.debug("Failed to send initial SSE event", ex)
-            emitters.remove(emitter)
+            list.remove(emitter)
             emitter.completeWithError(ex)
         }
 
         return emitter
     }
 
-    private fun publish(job: TilingJobStatusResponse) {
-        emitters.forEach { emitter ->
+    /** Visible for testing: emitters currently subscribed for [tenant]. */
+    internal fun emittersForTenant(tenant: String): List<SseEmitter> =
+        emittersByTenant[tenant]?.toList() ?: emptyList()
+
+    private fun publish(job: TilingJobStatusResponse, tenant: String) {
+        val list = emittersByTenant[tenant] ?: return
+        list.forEach { emitter ->
             try {
                 emitter.send(
                     SseEmitter.event()
@@ -185,7 +195,7 @@ class TilingJobService(
                         .data(job)
                 )
             } catch (ex: Exception) {
-                emitters.remove(emitter)
+                list.remove(emitter)
                 emitter.completeWithError(ex)
             }
         }
