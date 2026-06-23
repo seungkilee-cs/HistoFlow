@@ -108,18 +108,27 @@ previously-unpinned tiling dependencies.
 unglamorous groundwork that makes the reproducibility story credible.
 
 **PR 2 — Wire CI + un-rot the tests.** The five workflow files existed but were empty, so no test
-had ever run in CI. Wired backend (`./gradlew test`), frontend (`tsc` + `vitest`), a shellcheck lint
-lane, a compose-based integration smoke test, and a Trivy security scan — with deliberate severity
-tiers: unit/type checks block, while the heavy compose job and the secret-finding scan start
-report-only and tighten as later PRs remove the committed credentials.
+had ever run in CI. Wired backend (`./gradlew test`), frontend (`tsc` + `vitest`), region-detector
+(`pytest` on Python 3.11 with a torch-free `requirements-test.txt`), a shellcheck lint lane, a
+compose-based integration smoke test, and a Trivy security scan — with deliberate severity tiers:
+unit/type checks block, while the heavy compose job and the secret-finding scan start report-only
+and tighten as later PRs remove the committed credentials.
 
-The moment I ran the frontend suite locally, it came back **red — and not because of anything I
-changed.** Two tests asserted UI that no longer exists: a nav link renamed `Tile Viewer` → `Viewer`,
-and a "Backend activity" history panel + combined `message. 42%` string that a later UI
-simplification had removed. This is the entire argument for CI in one observation: *the suite had
-been silently broken and nobody knew, because nothing ran it.* I refreshed the assertions to the
-UI's real current contract (companion branch) so the gate is genuinely green (6/6) rather than
-green-because-weakened.
+The moment I ran the suites locally, they came back **red — and not because of anything I changed.**
+*Two independent test-rot finds, in two different languages:*
+
+- **Frontend:** two tests asserted UI that no longer exists — a nav link renamed `Tile Viewer` →
+  `Viewer`, and a "Backend activity" history panel + combined `message. 42%` string that a later UI
+  simplification had removed. Refreshed the assertions to the UI's real current contract (6/6 green).
+- **region-detector:** `test_variance_fallback_catches_non_he_content` built a tile with three
+  *independent* random RGB channels — which is colourful (high HSV saturation), so it passed the
+  primary saturation check and contradicted its own assertion that the variance fallback was needed.
+  The code was correct; the test didn't match its own docstring ("grayscale photo"). Fixed it to use
+  true grayscale (R=G=B), matching its sibling test (28/28 green).
+
+This is the entire argument for CI in one observation: *both suites had been silently broken and
+nobody knew, because nothing ran them.* I fixed the tests to their real contracts so the gates are
+genuinely green rather than green-because-weakened.
 *Why it matters:* CI is the ratchet. Every later epic — security, durability, model versioning —
 relies on a regression being *catchable*. This turns that on.
 
@@ -140,9 +149,10 @@ dedicated PR so it can land with the `@WebMvcTest` updates it requires.
 ### What I couldn't verify here, and how it's covered
 
 No JDK is available in this working environment, so the Kotlin changes (PR 4) and the backend test
-gate (PR 2) were not compiled locally — they are exercised by `backend-ci` on push. The frontend
-changes *were* run locally (`tsc --noEmit` clean; `vitest` 6/6 green). Calling this out explicitly
-rather than implying everything was verified end-to-end.
+gate (PR 2) were not compiled locally — they are exercised by `backend-ci` on push. Everything else
+*was* run locally: the frontend suite (`tsc --noEmit` clean; `vitest` 6/6 green) and the
+region-detector suite (`pytest` on Python 3.11 — the CI version — 28/28 green). Calling this out
+explicitly rather than implying everything was verified end-to-end.
 
 ---
 
