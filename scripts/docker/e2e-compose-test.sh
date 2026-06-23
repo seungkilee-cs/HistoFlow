@@ -2,10 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BASE_COMPOSE="$REPO_ROOT/docker/docker-compose.base.yml"
 DEV_COMPOSE="$REPO_ROOT/docker/docker-compose.dev.yml"
-E2E_SCRIPT="$REPO_ROOT/scripts/sprint2/e2e-upload-and-tile.sh"
+E2E_SCRIPT="$REPO_ROOT/scripts/sprint03/e2e-upload-and-tile.sh"
 RUNTIME_PORTS_LIB="$REPO_ROOT/scripts/lib/runtime-ports.sh"
 
 if [[ ! -f "$BASE_COMPOSE" ]]; then

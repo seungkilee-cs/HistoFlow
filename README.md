@@ -7,7 +7,7 @@ Cancer detection AI platform, inspired by [Lunit](https://www.lunit.io/).
 ### Development Environment (All-in-One)
 
 ```bash
-./scripts/dev-start.sh
+./dev.sh
 ```
 
 Starts MinIO, Backend, and Frontend in separate terminal windows.
@@ -16,7 +16,7 @@ Starts MinIO, Backend, and Frontend in separate terminal windows.
 
 - Backend: [Manual Setup Guide](./docs/setup/backend/manual.kot.md)
 - Docker: [In Progress]()
-- Tile Generation: [Backend Scripts](./backend/scripts/README.md)
+- Tile Generation: [Tiling Service](./services/tiling)
 
 ## Design
 

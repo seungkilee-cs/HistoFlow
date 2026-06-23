@@ -29,7 +29,7 @@ Service Dockerfiles remain close to their code:
 Bring up the full stack with the helper script (wraps base + dev overlays):
 
 ```bash
-./scripts/sprint2/docker/start-stack.sh
+./scripts/docker/start-stack.sh
 ```
 
 This creates the `histoflow-sprint2` compose project, builds images if needed, and exposes services on:
@@ -41,13 +41,13 @@ This creates the `histoflow-sprint2` compose project, builds images if needed, a
 Tear everything down (including volumes):
 
 ```bash
-./scripts/sprint2/docker/stop-stack.sh
+./scripts/docker/stop-stack.sh
 ```
 
 Run the automated end-to-end test (upload + tiling + verification) inside the stack:
 
 ```bash
-./scripts/sprint2/docker/e2e-compose-test.sh ~/slides/sample.svs
+./scripts/docker/e2e-compose-test.sh ~/slides/sample.svs
 ```
 
 ### Direct compose commands
