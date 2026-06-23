@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
 import matplotlib
-import matplotlib.cm as cm
 import numpy as np
 from PIL import Image
 
@@ -94,7 +93,7 @@ def generate_heatmap(
     PIL.Image.Image
         RGBA image.
     """
-    cmap = cm.get_cmap(colormap)
+    cmap = matplotlib.colormaps[colormap]
 
     # ── Pixel-accurate mode ───────────────────────────────────────────────────
     if (
