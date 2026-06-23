@@ -85,4 +85,67 @@ base. It maps to roadmap epics **A** and **B**.
 - **PR 4 — Tile-serving crash + global error handling.** Stop a malformed tile request from
   returning a 500, and route all controller errors through one handler so internals stop leaking.
 
-*(Per-PR completion notes are appended below as each lands.)*
+### Results
+
+Branches (each opens as its own PR; non-overlapping files):
+
+| Branch | Roadmap PR | What landed |
+|--------|-----------|-------------|
+| `chore/repo-hygiene-and-docs` | 1 | doc/script/gradle/deps cleanup |
+| `ci/wire-github-actions` | 2 | five GitHub Actions workflows |
+| `chore/refresh-frontend-tests` | 2 (companion) | un-rot the frontend suite |
+| `fix/heatmap-matplotlib-colormap` | 3 | Matplotlib ≥3.9 fix |
+| `fix/tile-coord-parse-and-error-handling` | 4 | tile-serving robustness |
+
+**PR 1 — Repo hygiene.** Pointed the README at the real entry point (`./dev.sh`), corrected the
+`docker/README` helper-script paths, and fixed a `REPO_ROOT` bug shared by all three
+`scripts/docker/*.sh` helpers — they resolved one directory *above* the repo root, so the e2e
+harness could never have run as written. Dropped the `apps:api`/`libs:common` Gradle modules that
+were declared in `settings.gradle.kts` but had no build files (plus the stray, divergent
+`backend/apps` source copy), leaving a single honest module rooted at `backend/src`. Pinned the
+previously-unpinned tiling dependencies.
+*Why it matters:* a repo that lies about how to run it is a repo nobody can onboard to. This is the
+unglamorous groundwork that makes the reproducibility story credible.
+
+**PR 2 — Wire CI + un-rot the tests.** The five workflow files existed but were empty, so no test
+had ever run in CI. Wired backend (`./gradlew test`), frontend (`tsc` + `vitest`), a shellcheck lint
+lane, a compose-based integration smoke test, and a Trivy security scan — with deliberate severity
+tiers: unit/type checks block, while the heavy compose job and the secret-finding scan start
+report-only and tighten as later PRs remove the committed credentials.
+
+The moment I ran the frontend suite locally, it came back **red — and not because of anything I
+changed.** Two tests asserted UI that no longer exists: a nav link renamed `Tile Viewer` → `Viewer`,
+and a "Backend activity" history panel + combined `message. 42%` string that a later UI
+simplification had removed. This is the entire argument for CI in one observation: *the suite had
+been silently broken and nobody knew, because nothing ran it.* I refreshed the assertions to the
+UI's real current contract (companion branch) so the gate is genuinely green (6/6) rather than
+green-because-weakened.
+*Why it matters:* CI is the ratchet. Every later epic — security, durability, model versioning —
+relies on a regression being *catchable*. This turns that on.
+
+**PR 3 — Matplotlib fix.** `matplotlib.cm.get_cmap` was removed in 3.9; with the dependency floor at
+`>=3.7` a clean install resolved 3.9+ and the heatmap stage crashed on every analysis. Migrated to
+the `matplotlib.colormaps[...]` registry (stable since 3.5).
+*Why it matters:* "works on the original dev box" is not reproducible. A one-line change is the
+difference between a demo and something a teammate can actually run.
+
+**PR 4 — Tile-serving robustness.** `getTile` parsed the `{coord}` path variable with a destructuring
+`toInt()` *before* its try block, so any malformed coordinate (no underscore, non-numeric) threw an
+uncaught exception → HTTP 500 on the single hottest endpoint in the system (a Deep Zoom view fires
+hundreds of tile requests). Now parses defensively and returns 404. Also routed four bare
+`printStackTrace()` calls through SLF4J. The broader global `@RestControllerAdvice` is deferred to a
+dedicated PR so it can land with the `@WebMvcTest` updates it requires.
+*Why it matters:* the serving layer should degrade gracefully under bad input, not stack-trace.
+
+### What I couldn't verify here, and how it's covered
+
+No JDK is available in this working environment, so the Kotlin changes (PR 4) and the backend test
+gate (PR 2) were not compiled locally — they are exercised by `backend-ci` on push. The frontend
+changes *were* run locally (`tsc --noEmit` clean; `vitest` 6/6 green). Calling this out explicitly
+rather than implying everything was verified end-to-end.
+
+---
+
+*Next up (Sprint 2): the security foundation — externalize secrets (PR 5), authenticate the internal
+callbacks (PR 6), and scope the SSE stream (PR 7). This is the highest-leverage work: until the API
+is authenticated, every other safeguard is moot.*
