@@ -1,0 +1,9 @@
+# Lightweight dependencies for the region-detector unit tests.
+# The tested modules (geometry, tile_levels, heatmap, tissue_detector) need
+# only numerical/imaging libs — not torch/transformers — so CI stays fast.
+numpy>=1.24
+pillow>=10.0.0
+# matplotlib<3.9 keeps cm.get_cmap available for branches that predate the
+# colormaps[] migration; safe to relax once that fix is merged.
+matplotlib>=3.7,<3.9
+pytest>=7.4

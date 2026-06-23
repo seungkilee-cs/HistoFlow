@@ -69,9 +69,12 @@ class TestTissueDetector:
 
     def test_variance_fallback_catches_non_he_content(self):
         """Greyscale image with real content passes via variance fallback."""
-        # Simulate a grayscale natural photo tile (no H&E saturation, but high variance)
+        # Simulate a grayscale natural photo tile (no H&E saturation, but high variance).
+        # Must be true grayscale (R=G=B); independent random channels would be
+        # colourful and pass the primary saturation check, defeating the test.
         rng = np.random.default_rng(42)
-        tile = rng.integers(40, 220, (256, 256, 3), dtype=np.uint8)
+        gray = rng.integers(40, 220, (256, 256), dtype=np.uint8)
+        tile = np.stack([gray, gray, gray], axis=-1)
         img = Image.fromarray(tile, "RGB")
 
         result_with = detect_tissue(img, threshold=0.15, variance_fallback=True)
